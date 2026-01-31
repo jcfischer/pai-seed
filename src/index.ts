@@ -42,3 +42,22 @@ export type { LoadResult, LoadError, WriteResult, WriteError } from "./loader";
 // Functions
 export { loadSeed, writeSeed, writeJsonSchema, resolveSeedPath } from "./loader";
 export { deepMerge } from "./merge";
+
+// =============================================================================
+// F-003: Git-backed persistence
+// =============================================================================
+
+// Types
+export type { GitResult, GitInitResult, RepairResult, CommitCategory } from "./git";
+
+// Functions
+export {
+  initGitRepo,
+  commitSeedChange,
+  writeSeedWithCommit,
+  repairFromGit,
+  loadSeedWithGit,
+  isGitRepo,
+  getLastCommitMessage,
+  hasUncommittedChanges,
+} from "./git";
