@@ -1,0 +1,23 @@
+{
+  "version": "1.0.0",
+  "identity": {
+    "principalName": "User",
+    "aiName": "PAI",
+    "catchphrase": "PAI here, ready to go.",
+    "voiceId": "default",
+    "preferences": {
+      "responseStyle": "adaptive",
+      "timezone": "UTC",
+      "locale": "en-US"
+    }
+  },
+  "learned": {
+    "patterns": [],
+    "insights": [],
+    "selfKnowledge": []
+  },
+  "state": {
+    "proposals": [],
+    "activeProjects": []
+  }
+}

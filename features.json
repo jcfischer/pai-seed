@@ -1,0 +1,114 @@
+[
+  {
+    "id": "F-001",
+    "name": "Seed.json schema and validation",
+    "description": "Define the JSON Schema for seed.json with three layers: identity (name, voice, catchphrase, preferences), learned (patterns, insights, self-knowledge), and state (active projects, pending proposals, last session summary). Include schema versioning for future migrations.",
+    "dependencies": [],
+    "priority": 1
+  },
+  {
+    "id": "F-002",
+    "name": "Seed file loader with defaults",
+    "description": "Load seed.json from ~/.pai/seed.json on startup. If missing, create from defaults. Validate against schema. Merge with defaults for any missing fields. Return typed SeedConfig object. Must complete in <2s.",
+    "dependencies": ["F-001"],
+    "priority": 2
+  },
+  {
+    "id": "F-003",
+    "name": "Git-backed persistence",
+    "description": "Initialize ~/.pai/ as a git repo. Auto-commit seed.json changes with descriptive messages (e.g., 'Learn: prefers concise morning responses'). Support auto-repair: on corruption, checkout last known good version from git history and warn user.",
+    "dependencies": ["F-002"],
+    "priority": 3
+  },
+  {
+    "id": "F-004",
+    "name": "First-run setup wizard",
+    "description": "On first run (no seed.json exists), guide user through identity setup using AskUserQuestion: name, AI name, voice preference, catchphrase. Write results to seed.json and git commit.",
+    "dependencies": ["F-002", "F-003"],
+    "priority": 4
+  },
+  {
+    "id": "F-005",
+    "name": "Session start hook (load + proposals)",
+    "description": "Claude Code SessionStart hook that loads seed.json and injects identity context into system prompt. If pending proposals exist from the last session, present them as a system-reminder for user review.",
+    "dependencies": ["F-002"],
+    "priority": 5
+  },
+  {
+    "id": "F-006",
+    "name": "Post-session extraction hook",
+    "description": "Claude Code PreCompact hook that analyzes the session transcript. Extract learning candidates: facts learned, patterns observed, self-knowledge insights, commitments made. Store as pending proposals in seed.json state.proposals array.",
+    "dependencies": ["F-002"],
+    "priority": 6
+  },
+  {
+    "id": "F-007",
+    "name": "Proposal confirmation flow",
+    "description": "At session start, present pending proposals from the extraction hook. User approves/rejects via AskUserQuestion. Approved proposals move to seed.json learned section. Rejected proposals are discarded. Git commit on changes.",
+    "dependencies": ["F-005", "F-006"],
+    "priority": 7
+  },
+  {
+    "id": "F-008",
+    "name": "Event log foundation",
+    "description": "Append-only JSONL event log at ~/.pai/events/. Each event: timestamp, session_id, type (skill_invoked, isc_verified, learning_extracted, proposal_accepted), data payload. Write-through to both JSONL and SQLite index for queries.",
+    "dependencies": ["F-002"],
+    "priority": 8
+  },
+  {
+    "id": "F-009",
+    "name": "Event log compaction",
+    "description": "Monthly compaction: events older than 90 days summarized into period summaries. Original JSONL archived to ~/.pai/archive/. SQLite index contains only active window + summaries. Bounded at ~50MB active store.",
+    "dependencies": ["F-008"],
+    "priority": 9
+  },
+  {
+    "id": "F-010",
+    "name": "Checkpoint system",
+    "description": "JSON state snapshots at algorithm phase transitions. Stored in ~/.pai/checkpoints/. On session start, detect incomplete checkpoints and offer 'Resume from Phase N?' via system-reminder. Auto-cleanup checkpoints older than 30 days.",
+    "dependencies": ["F-008"],
+    "priority": 10
+  },
+  {
+    "id": "F-011",
+    "name": "Seed CLI commands",
+    "description": "CLI for direct seed.json interaction: 'pai-seed show' (human-readable summary), 'pai-seed learn <insight>' (manual learning), 'pai-seed forget <pattern>' (remove learning), 'pai-seed diff' (changes since last session), 'pai-seed repair' (git auto-repair).",
+    "dependencies": ["F-002", "F-003"],
+    "priority": 11
+  },
+  {
+    "id": "F-012",
+    "name": "ACR integration",
+    "description": "Register seed.json learnings and event log as new sources for ACR's Tier 2 semantic search. When ACR indexes, include seed.json content and recent event summaries. Learnings should boost relevance when matched.",
+    "dependencies": ["F-002", "F-008"],
+    "priority": 12
+  },
+  {
+    "id": "F-013",
+    "name": "Relationship file system",
+    "description": "Separate relationship files at ~/.pai/relationships/rel_<name>.json. Each contains: name, first_encountered, last_interaction, context, key_moments array. Seed.json references relationships but doesn't contain them. CLI: 'pai-seed rel show <name>', 'pai-seed rel add <name>'.",
+    "dependencies": ["F-002", "F-003"],
+    "priority": 13
+  },
+  {
+    "id": "F-014",
+    "name": "Schema migration system",
+    "description": "Version-aware migration for seed.json schema changes. On load, detect schema version mismatch. Run migration scripts sequentially (v1→v2→v3). Back up current file before migration. Support both forward and rollback migrations.",
+    "dependencies": ["F-001", "F-002"],
+    "priority": 14
+  },
+  {
+    "id": "F-015",
+    "name": "Learning decay and freshness",
+    "description": "Learned patterns have a 'last_confirmed' timestamp. Patterns not confirmed in 90 days are flagged as potentially stale. Periodic 'identity review' prompt suggests reviewing old learnings. Decay doesn't auto-delete — just flags for review.",
+    "dependencies": ["F-002", "F-007"],
+    "priority": 15
+  },
+  {
+    "id": "F-016",
+    "name": "Redaction support",
+    "description": "User can redact events from the event log. Append a redaction event that masks the original. SQLite index excludes redacted events. JSONL preserves audit trail. CLI: 'pai-seed redact <event_id>'.",
+    "dependencies": ["F-008"],
+    "priority": 16
+  }
+]

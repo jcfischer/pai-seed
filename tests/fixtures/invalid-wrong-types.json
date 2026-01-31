@@ -1,0 +1,23 @@
+{
+  "version": 100,
+  "identity": {
+    "principalName": false,
+    "aiName": 42,
+    "catchphrase": "",
+    "voiceId": "default",
+    "preferences": {
+      "responseStyle": "ultra-verbose",
+      "timezone": 123,
+      "locale": null
+    }
+  },
+  "learned": {
+    "patterns": "not-an-array",
+    "insights": [],
+    "selfKnowledge": []
+  },
+  "state": {
+    "proposals": [],
+    "activeProjects": 999
+  }
+}

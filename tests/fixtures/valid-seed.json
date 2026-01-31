@@ -1,0 +1,98 @@
+{
+  "version": "1.0.0",
+  "identity": {
+    "principalName": "Daniel",
+    "aiName": "Ivy",
+    "catchphrase": "Ivy here, ready to go.",
+    "voiceId": "EXAVITQu4vr4xnSDxMaL",
+    "preferences": {
+      "responseStyle": "adaptive",
+      "timezone": "Europe/Zurich",
+      "locale": "en-US"
+    }
+  },
+  "learned": {
+    "patterns": [
+      {
+        "id": "pat_001",
+        "content": "Prefers TypeScript over Python for all projects",
+        "source": "session_2026-01-15",
+        "extractedAt": "2026-01-15T10:30:00Z",
+        "confirmedAt": "2026-01-15T10:35:00Z",
+        "confirmed": true,
+        "tags": ["language-preference", "tooling"]
+      },
+      {
+        "id": "pat_002",
+        "content": "Uses Bun as the JavaScript runtime, never npm/yarn/pnpm",
+        "source": "session_2026-01-16",
+        "extractedAt": "2026-01-16T09:00:00Z",
+        "confirmed": false,
+        "tags": ["runtime", "tooling"]
+      },
+      {
+        "id": "pat_003",
+        "content": "Writes tests before implementation (TDD mandatory)",
+        "source": "manual",
+        "extractedAt": "2026-01-10T08:00:00Z",
+        "confirmedAt": "2026-01-10T08:05:00Z",
+        "confirmed": true,
+        "tags": ["methodology", "testing"]
+      }
+    ],
+    "insights": [
+      {
+        "id": "ins_001",
+        "content": "Morning sessions are more productive for architecture work",
+        "source": "session_2026-01-20",
+        "extractedAt": "2026-01-20T14:00:00Z",
+        "confirmed": true,
+        "confirmedAt": "2026-01-21T08:00:00Z",
+        "tags": ["productivity", "scheduling"]
+      }
+    ],
+    "selfKnowledge": [
+      {
+        "id": "sk_001",
+        "content": "Tends to over-explain when a concise answer would suffice",
+        "source": "session_2026-01-18",
+        "extractedAt": "2026-01-18T16:00:00Z",
+        "confirmed": true,
+        "confirmedAt": "2026-01-19T08:00:00Z",
+        "tags": ["communication", "self-awareness"]
+      }
+    ]
+  },
+  "state": {
+    "lastSessionId": "sess_abc123",
+    "lastSessionAt": "2026-01-30T18:45:00Z",
+    "proposals": [
+      {
+        "id": "prop_001",
+        "type": "pattern",
+        "content": "Prefers Chart.js over D3 for data visualization",
+        "source": "session_2026-01-30",
+        "extractedAt": "2026-01-30T18:45:00Z",
+        "status": "pending"
+      },
+      {
+        "id": "prop_002",
+        "type": "insight",
+        "content": "Complex refactoring tasks go better with a plan-first approach",
+        "source": "session_2026-01-30",
+        "extractedAt": "2026-01-30T18:46:00Z",
+        "status": "accepted"
+      },
+      {
+        "id": "prop_003",
+        "type": "self_knowledge",
+        "content": "Should ask clarifying questions before diving into implementation",
+        "source": "session_2026-01-29",
+        "extractedAt": "2026-01-29T17:00:00Z",
+        "status": "rejected"
+      }
+    ],
+    "activeProjects": ["pai-seed", "reporter", "ragent"],
+    "checkpointRef": "checkpoint_2026-01-30_001"
+  }
+}

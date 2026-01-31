@@ -1,0 +1,22 @@
+{
+  "identity": {
+    "principalName": "Daniel",
+    "aiName": "Ivy",
+    "catchphrase": "Ivy here, ready to go.",
+    "voiceId": "default",
+    "preferences": {
+      "responseStyle": "adaptive",
+      "timezone": "UTC",
+      "locale": "en-US"
+    }
+  },
+  "learned": {
+    "patterns": [],
+    "insights": [],
+    "selfKnowledge": []
+  },
+  "state": {
+    "proposals": [],
+    "activeProjects": []
+  }
+}
