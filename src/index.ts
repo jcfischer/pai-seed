@@ -61,3 +61,19 @@ export {
   getLastCommitMessage,
   hasUncommittedChanges,
 } from "./git";
+
+// =============================================================================
+// F-004: Setup wizard
+// =============================================================================
+
+// Types
+export type { SetupAnswers, SetupResult } from "./setup";
+
+// Functions
+export {
+  setupAnswersSchema,
+  detectTimezone,
+  buildSeedFromAnswers,
+  isFirstRun,
+  runSetup,
+} from "./setup";
