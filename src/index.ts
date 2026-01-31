@@ -77,3 +77,20 @@ export {
   isFirstRun,
   runSetup,
 } from "./setup";
+
+// =============================================================================
+// F-005: Session start hook
+// =============================================================================
+
+// Types
+export type { SessionContext, SessionContextOptions, ContextMode } from "./session";
+
+// Functions
+export {
+  formatIdentitySummary,
+  formatLearningSummary,
+  formatProposals,
+  formatSessionState,
+  generateSessionContext,
+  sessionStartHook,
+} from "./session";
