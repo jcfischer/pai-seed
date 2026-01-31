@@ -31,3 +31,14 @@ export {
   KNOWN_SEED_KEYS,
   CURRENT_MAJOR_VERSION,
 } from "./schema";
+
+// =============================================================================
+// F-002: Loader
+// =============================================================================
+
+// Types
+export type { LoadResult, LoadError, WriteResult, WriteError } from "./loader";
+
+// Functions
+export { loadSeed, writeSeed, writeJsonSchema, resolveSeedPath } from "./loader";
+export { deepMerge } from "./merge";
