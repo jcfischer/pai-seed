@@ -60,7 +60,7 @@
 
   Format:
   ```
-  Identity: {aiName} (serving {principalName})
+  Identity: {aiName} (working with {principalName})
   Catchphrase: "{catchphrase}"
   Style: {responseStyle} | Timezone: {timezone} | Locale: {locale}
   ```

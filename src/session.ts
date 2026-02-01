@@ -38,7 +38,7 @@ export type SessionContext =
  */
 export function formatIdentitySummary(identity: IdentityLayer): string {
   const lines: string[] = [
-    `Identity: ${identity.aiName} (serving ${identity.principalName})`,
+    `Identity: ${identity.aiName} (working with ${identity.principalName})`,
     `Catchphrase: "${identity.catchphrase}"`,
     `Style: ${identity.preferences.responseStyle} | Timezone: ${identity.preferences.timezone} | Locale: ${identity.preferences.locale}`,
   ];
