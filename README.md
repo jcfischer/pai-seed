@@ -10,12 +10,107 @@ This is the core loop that makes `seed.json` different from a configuration file
 
 pai-seed provides the typed infrastructure for this lifecycle: schema validation, git-backed persistence, session hooks, event logging, learning decay, and the full propose-confirm-persist pipeline that turns transient sessions into durable intelligence.
 
-**510 tests | 16 features | 0 failures**
+**589 tests | 21 features | 0 failures**
+
+## The Learning Lifecycle
+
+pai-seed implements a closed-loop learning system with two input channels, quality filtering, human review, and feedback monitoring.
+
+```
+                           TWO INPUT CHANNELS
+                    ┌──────────────────────────────┐
+                    │                              │
+            Deliberate                      Automatic
+     pai-seed capture <type>          Post-session extraction
+       "I want to remember"          "AI noticed something"
+                    │                              │
+                    │                     ┌────────┴────────┐
+                    │                     │                  │
+                    │              ACR Semantic         Regex Fallback
+                    │              (confidence ≥0.7)    (ACR unavailable)
+                    │                     │                  │
+                    │                     └────────┬────────┘
+                    │                              │
+                    │                     Pre-filter transcript
+                    │                     (strip code blocks, JSON,
+                    │                      tool output, line numbers)
+                    │                              │
+                    │                     Truncate to 200 chars
+                    │                              │
+                    └──────────┬───────────────────┘
+                               │
+                          PROPOSALS
+                     (pending in seed.json)
+                               │
+                    ┌──────────┴──────────┐
+                    │    SESSION START    │
+                    │  Top 5 by recency  │
+                    │  shown as context  │
+                    └──────────┬──────────┘
+                               │
+                          HUMAN REVIEW
+                    pai-seed proposals review
+                    (or AI-assisted in session)
+                               │
+                    ┌──────────┴──────────┐
+                    │                      │
+               ACCEPTED                REJECTED
+          → confirmed learning      → marked rejected
+          → routed by type          → cleaned on demand
+          → persists in seed        → stats tracked
+                    │                      │
+                    └──────────┬───────────┘
+                               │
+                        FEEDBACK LOOP
+                    pai-seed status shows:
+                    - acceptance rate
+                    - per-type breakdown
+                    - confidence averages
+                    - threshold alerts
+```
+
+### Two Channels
+
+**Deliberate capture** (`pai-seed capture <type> <content>`): You explicitly tell the system what to remember. This bypasses extraction entirely — the learning is confirmed immediately.
+
+**Automatic extraction** (post-session hook): After each AI session, the transcript is processed through the extraction pipeline. ACR semantic extraction runs first (confidence threshold 0.7). If ACR is unavailable, regex pattern matching serves as fallback. The transcript is pre-filtered to strip code blocks, JSON objects, tool output, and line-number prefixed content before extraction.
+
+### Quality Pipeline (F-019)
+
+Raw transcripts contain code, API responses, and conversation scaffolding that produce garbage proposals. The extraction pipeline applies four quality layers:
+
+1. **Pre-filter**: `stripStructuredContent()` removes fenced code blocks, tool XML blocks, line-number prefixed lines, and large JSON objects before extraction runs
+2. **ACR-first with silence on empty**: When ACR succeeds but finds nothing above the confidence threshold, the system accepts silence rather than falling back to regex
+3. **Content truncation**: All proposal content capped at 200 characters
+4. **Surfacing cap**: Session start context shows top 5 proposals by recency, not all pending
+
+### Feedback Loop (F-021)
+
+Every accept/reject decision increments cumulative extraction stats stored in `state.extractionStats`. The `pai-seed status` command displays extraction health:
+
+```
+Extraction health:
+  Proposals: 48 total (5 accepted, 3 rejected, 40 pending)
+  Acceptance rate: 62.5% (5/8 decided)
+  By type: patterns 3/4 (75%), insights 2/3 (67%), self_knowledge 0/1 (0%)
+  Avg confidence: accepted=0.82, rejected=0.51
+```
+
+Threshold alerts fire with 10+ decisions:
+- **>90% accepted**: "Extraction filter may be too loose"
+- **<10% accepted**: "Extraction producing mostly noise"
 
 ## Architecture
 
 ```
+Layer 5: Quality & Feedback
+  F-021  Feedback Loop    ← extraction stats, acceptance rate, threshold alerts
+  F-020  Deliberate Capture ← explicit capture command, two-channel model
+  F-019  Extraction Quality ← pre-filter, truncation, surfacing cap
+
 Layer 4: Intelligence
+  F-018  Proposals CLI    ← list, accept, reject, review, bulk operations
+  F-017  ACR Extraction   ← semantic extraction via ACR with confidence scoring
   F-015  Freshness        ← learning decay detection, review prompts
   F-012  ACR Integration  ← export learnings/events for semantic search
   F-006  Extraction       ← detect learning signals from sessions
@@ -63,7 +158,14 @@ Layer 1: Foundation
   },
   "state": {
     "proposals": [],
-    "activeProjects": []
+    "activeProjects": [],
+    "extractionStats": {
+      "accepted": 0,
+      "rejected": 0,
+      "byType": { "pattern": {}, "insight": {}, "self_knowledge": {} },
+      "confidenceSum": { "accepted": 0, "rejected": 0 },
+      "confidenceCount": { "accepted": 0, "rejected": 0 }
+    }
   }
 }
 ```
@@ -101,7 +203,7 @@ if (result.ok) {
 const output = await sessionStartHook();
 
 // Post-session — extract learning signals
-const extraction = await extractionHook(transcript, seedPath);
+const extraction = await extractionHook(transcript, sessionId);
 
 // Log events
 await logEvent("session_start", { action: "begin" });
@@ -116,20 +218,44 @@ const acr = await exportAllForACR();
 ## CLI
 
 ```bash
-pai-seed show                      # Seed summary
-pai-seed status                    # Health check
-pai-seed diff                      # Git diff
-pai-seed learn <type> <content>    # Add learning
+# Core
+pai-seed show [--json]             # Seed summary (JSON for machine consumption)
+pai-seed status                    # Health check + extraction stats
+pai-seed diff                      # Git diff for seed.json
+
+# Learning — two channels
+pai-seed capture <type> <content>  # Deliberate: you decide what to save
+pai-seed learn <type> <content>    # Alias for capture
+
+# Proposals — review extracted candidates
+pai-seed proposals list [--verbose]   # List pending proposals
+pai-seed proposals accept <id>        # Accept by ID prefix
+pai-seed proposals reject <id>        # Reject by ID prefix
+pai-seed proposals review             # Interactive review (a/r/s/q)
+pai-seed proposals accept-all         # Bulk accept
+pai-seed proposals reject-all         # Bulk reject
+pai-seed proposals clean              # Remove rejected from state
+
+# Learnings — browse confirmed knowledge
+pai-seed learnings list [--type=X] [--verbose]   # List learnings
+pai-seed learnings show <id>                     # Full detail
+pai-seed learnings search <query> [--type=X]     # Search content
+
+# Maintenance
 pai-seed forget <id>               # Remove learning
-pai-seed stale                     # List stale learnings
+pai-seed stale                     # List stale learnings (>90 days)
 pai-seed refresh <id>              # Re-confirm learning
+pai-seed redact <id> [reason]      # Redact event from log
+pai-seed repair                    # Auto-repair from git history
+
+# Relationships
 pai-seed rel list                  # List relationships
 pai-seed rel add <name> [context]  # Add relationship
 pai-seed rel show <name>           # Show relationship
 pai-seed rel moment <name> <desc>  # Add key moment
-pai-seed redact <id> [reason]      # Redact event
-pai-seed repair                    # Auto-repair from git
 ```
+
+Types: `pattern`, `insight`, `self_knowledge`
 
 ## API
 
@@ -141,7 +267,7 @@ pai-seed repair                    # Auto-repair from git
 | `validateSeed(data)` | Validate against schema |
 | `createDefaultSeed()` | New SeedConfig with defaults |
 | `generateJsonSchema()` | Generate JSON Schema |
-| `SeedConfig`, `Learning`, `Proposal` | Core types |
+| `SeedConfig`, `Learning`, `Proposal`, `ExtractionStats` | Core types |
 
 ### F-002: Loader
 
@@ -180,18 +306,24 @@ pai-seed repair                    # Auto-repair from git
 
 | Export | Description |
 |--------|-------------|
-| `extractionHook(transcript, path?)` | Hook entry point |
+| `extractionHook(transcript, sessionId?, path?)` | Hook entry point (ACR-first with regex fallback) |
 | `detectLearningSignals(text)` | Find learning patterns in text |
-| `extractProposals(signals)` | Convert signals to proposals |
+| `extractProposals(transcript, sessionId?)` | Convert signals to proposals |
+| `stripStructuredContent(text)` | Pre-filter code blocks, JSON, tool output |
+| `callAcrExtraction(transcript, opts?)` | ACR semantic extraction |
 
 ### F-007: Proposal Confirmation
 
 | Export | Description |
 |--------|-------------|
-| `acceptProposal(id, path?)` | Accept → learning |
-| `rejectProposal(id, path?)` | Reject proposal |
+| `acceptProposal(id, path?)` | Accept -> learning (tracks stats) |
+| `rejectProposal(id, path?)` | Reject proposal (tracks stats) |
 | `getPendingProposals(path?)` | List pending proposals |
-| `acceptAllProposals(path?)` | Bulk accept |
+| `acceptAllProposals(path?)` | Bulk accept (tracks stats) |
+| `rejectAllProposals(path?)` | Bulk reject (tracks stats) |
+| `cleanRejected(path?)` | Remove rejected from state |
+| `initExtractionStats()` | Zero-valued stats object |
+| `updateExtractionStats(stats, type, action, confidence?)` | Increment counters |
 
 ### F-008: Event Log
 
@@ -221,7 +353,7 @@ pai-seed repair                    # Auto-repair from git
 
 ### F-011: CLI
 
-Binary: `pai-seed` (via `src/cli.ts`). Exported `main(argv?)` function for programmatic use.
+Binary: `pai-seed` (via `src/cli.ts`). Exported `main(argv?)` and `computeExtractionHealth(config)` for programmatic use.
 
 ### F-012: ACR Integration
 
@@ -267,10 +399,42 @@ Binary: `pai-seed` (via `src/cli.ts`). Exported `main(argv?)` function for progr
 | `isRedacted(id, opts?)` | Check if event redacted |
 | `getRedactedIds(opts?)` | Set of all redacted IDs |
 
+### F-017: ACR Semantic Extraction
+
+| Export | Description |
+|--------|-------------|
+| `callAcrExtraction(transcript, opts?)` | CLI interface to ACR binary |
+| `AcrExtractionResult`, `AcrExtractionOptions` | Types |
+
+### F-018: Proposals & Learnings CLI
+
+Full proposals management (`list`, `accept`, `reject`, `review`, `accept-all`, `reject-all`, `clean`) and learnings browsing (`list`, `show`, `search`) with ID prefix resolution, type filtering, verbose/compact output, and search highlighting.
+
+### F-019: Extraction Quality
+
+| Export | Description |
+|--------|-------------|
+| `stripStructuredContent(text)` | Remove code blocks, JSON, tool XML, line numbers |
+| `MAX_PROPOSAL_CONTENT_LENGTH` | Content truncation limit (200) |
+
+### F-020: Deliberate Capture
+
+`capture` command alias for `learn` with "captured" commit verb. Review suggestion appended to `formatProposals()` output. Help text documents two-channel learning model.
+
+### F-021: Feedback Loop
+
+| Export | Description |
+|--------|-------------|
+| `computeExtractionHealth(config)` | Stats + alerts string (or null) |
+| `initExtractionStats()` | Zero-valued stats object |
+| `updateExtractionStats(stats, type, action, confidence?)` | Increment counters |
+
+Proposal schema extended with optional `confidence` (ACR score) and `decidedAt` (ISO timestamp). Cumulative stats tracked in `state.extractionStats`.
+
 ## Development
 
 ```bash
-bun test              # 510 tests across 20 files
+bun test              # 589 tests across 22 files
 bun run typecheck     # tsc --noEmit
 ```
 
