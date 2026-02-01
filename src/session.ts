@@ -139,6 +139,10 @@ export function formatProposals(proposals: Proposal[]): string {
     );
   }
 
+  lines.push(
+    `\nSuggestion: Ask your AI to help review proposals, or run \`pai-seed proposals review\`.`,
+  );
+
   return lines.join("\n");
 }
 

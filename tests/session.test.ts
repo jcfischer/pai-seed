@@ -351,6 +351,20 @@ describe("formatProposals", () => {
     const result = formatProposals(proposals);
     expect(result).toContain("Pending proposals (10):");
   });
+
+  // F-020: Review suggestion
+  test("includes review suggestion when proposals pending", () => {
+    const proposals = [makeProposal("Test proposal", "pending")];
+    const result = formatProposals(proposals);
+    expect(result).toContain("Suggestion:");
+    expect(result).toContain("pai-seed proposals review");
+  });
+
+  test("no review suggestion when no proposals", () => {
+    const result = formatProposals([]);
+    expect(result).toBe("");
+    expect(result).not.toContain("Suggestion:");
+  });
 });
 
 // =============================================================================

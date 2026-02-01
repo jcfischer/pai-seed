@@ -190,9 +190,10 @@ async function cmdDiff(seedPath?: string): Promise<number> {
   return 0;
 }
 
-async function cmdLearn(args: string[], seedPath?: string): Promise<number> {
+async function cmdLearn(args: string[], seedPath?: string, verb = "added"): Promise<number> {
   if (args.length < 2) {
-    console.error(ansi.red("Usage: pai-seed learn <type> <content...>"));
+    const cmd = verb === "captured" ? "capture" : "learn";
+    console.error(ansi.red(`Usage: pai-seed ${cmd} <type> <content...>`));
     console.error("Types: pattern, insight, self_knowledge");
     return 1;
   }
@@ -240,7 +241,7 @@ async function cmdLearn(args: string[], seedPath?: string): Promise<number> {
 
   const writeResult = await writeSeedWithCommit(
     config,
-    `Learn: added ${type} via CLI`,
+    `Learn: ${verb} ${type} via CLI`,
     seedPath,
   );
 
@@ -1088,9 +1089,10 @@ ${ansi.bold("Commands:")}
   show [--json]             Show seed configuration summary
   proposals <action>        Manage pending proposals
   learnings <action>        Browse confirmed learnings
+  capture <type> <content>  Deliberately capture a learning
+  learn <type> <content>    Add a confirmed learning (alias: capture)
   status                    Quick health check (path, version, validity)
   diff                      Show git diff for seed.json
-  learn <type> <content>    Add a confirmed learning
   forget <id>               Remove a learning by ID
   rel <subcommand>          Manage relationships
   stale                     List stale learnings (>90 days)
@@ -1099,17 +1101,21 @@ ${ansi.bold("Commands:")}
   repair                    Auto-repair from git history
   help                      Show this help
 
+${ansi.bold("Two channels for learning:")}
+  ${ansi.dim("Deliberate:")}  pai-seed capture <type> <content>  (you decide what to save)
+  ${ansi.dim("Automatic:")}   Post-session extraction via ACR     (AI proposes, you review)
+
 ${ansi.bold("Proposals:")} list, accept <id>, reject <id>, review, accept-all, reject-all, clean
 ${ansi.bold("Learnings:")} list [--type=X], show <id>, search <query>
 ${ansi.bold("Types:")} pattern, insight, self_knowledge
 
 ${ansi.bold("Examples:")}
+  pai-seed capture pattern "User prefers concise responses"
   pai-seed proposals list
   pai-seed proposals accept gDo_K4_n
   pai-seed proposals review
   pai-seed learnings list --type=pattern
   pai-seed learnings search "TypeScript"
-  pai-seed learn pattern "User prefers concise responses"
   pai-seed show`);
 }
 
@@ -1134,6 +1140,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       return cmdDiff();
     case "learn":
       return cmdLearn(args);
+    case "capture":
+      return cmdLearn(args, undefined, "captured");
     case "forget":
       return cmdForget(args);
     case "rel":
