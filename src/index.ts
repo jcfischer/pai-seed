@@ -233,3 +233,33 @@ export { acrDocumentSchema } from "./acr";
 
 // Functions
 export { exportLearnings, exportEventSummaries, exportAllForACR } from "./acr";
+
+// =============================================================================
+// F-013: Relationship file system
+// =============================================================================
+
+// Types
+export type {
+  Relationship,
+  KeyMoment,
+  RelationshipResult,
+  ListResult,
+  RelationshipWriteResult,
+  RelationshipOptions,
+} from "./relationships";
+
+// Schemas
+export { relationshipSchema, keyMomentSchema } from "./relationships";
+
+// Functions
+export {
+  resolveRelationshipsDir,
+  slugifyName,
+  loadRelationship,
+  saveRelationship,
+  addRelationship,
+  removeRelationship,
+  updateRelationship,
+  listRelationships,
+  addKeyMoment,
+} from "./relationships";

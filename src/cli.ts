@@ -6,6 +6,12 @@ import { isGitRepo, repairFromGit, writeSeedWithCommit, hasUncommittedChanges } 
 import { validateSeed } from "./validate";
 import { nanoid } from "nanoid";
 import type { Learning } from "./schema";
+import {
+  addRelationship,
+  loadRelationship,
+  listRelationships,
+  addKeyMoment,
+} from "./relationships";
 
 // =============================================================================
 // F-011: ANSI Helpers
@@ -286,6 +292,118 @@ async function cmdRepair(seedPath?: string): Promise<number> {
 }
 
 // =============================================================================
+// F-013: Relationship Commands
+// =============================================================================
+
+async function cmdRel(args: string[]): Promise<number> {
+  const sub = args[0];
+
+  if (!sub || sub === "help") {
+    console.log(`${ansi.bold("pai-seed rel")} — Relationship management
+
+${ansi.bold("Usage:")}
+  pai-seed rel <subcommand> [args...]
+
+${ansi.bold("Subcommands:")}
+  list                        List all relationships
+  show <name>                 Show relationship details
+  add <name> [context]        Create new relationship
+  moment <name> <description> Add key moment`);
+    return 0;
+  }
+
+  // Resolve paiDir from seedPath to keep relationships in the same .pai directory
+  const seedPath = resolveSeedPath();
+  const paiDir = seedPath.replace(/\/[^/]+$/, "");
+  const opts = { paiDir };
+
+  switch (sub) {
+    case "list": {
+      const result = await listRelationships(opts);
+      if (!result.ok) {
+        console.error(ansi.red(`Error: ${result.error}`));
+        return 1;
+      }
+      if (result.names.length === 0) {
+        console.log(ansi.dim("No relationships found."));
+        return 0;
+      }
+      console.log(ansi.bold("Relationships:"));
+      for (const name of result.names) {
+        console.log(`  ${name}`);
+      }
+      return 0;
+    }
+
+    case "show": {
+      const name = args.slice(1).join(" ");
+      if (!name) {
+        console.error(ansi.red("Usage: pai-seed rel show <name>"));
+        return 1;
+      }
+      const result = await loadRelationship(name, opts);
+      if (!result.ok) {
+        console.error(ansi.red(`Error: ${result.error}`));
+        return 1;
+      }
+      const rel = result.relationship;
+      console.log(ansi.bold(`=== ${rel.name} ===`));
+      console.log(`First encountered: ${rel.firstEncountered.slice(0, 10)}`);
+      console.log(`Last interaction:  ${rel.lastInteraction.slice(0, 10)}`);
+      if (rel.context) {
+        console.log(`Context: ${rel.context}`);
+      }
+      if (rel.keyMoments.length > 0) {
+        console.log();
+        console.log(ansi.bold("Key Moments:"));
+        for (const m of rel.keyMoments) {
+          const tags = m.tags?.length ? ` [${m.tags.join(", ")}]` : "";
+          console.log(`  ${m.date.slice(0, 10)}: ${m.description}${tags}`);
+        }
+      }
+      return 0;
+    }
+
+    case "add": {
+      if (args.length < 2) {
+        console.error(ansi.red("Usage: pai-seed rel add <name> [context]"));
+        return 1;
+      }
+      const name = args[1];
+      const context = args.slice(2).join(" ") || undefined;
+      const result = await addRelationship(name, context, opts);
+      if (!result.ok) {
+        console.error(ansi.red(`Error: ${result.error}`));
+        return 1;
+      }
+      console.log(ansi.green(`Added relationship: ${name}`));
+      return 0;
+    }
+
+    case "moment": {
+      if (args.length < 3) {
+        console.error(ansi.red("Usage: pai-seed rel moment <name> <description>"));
+        return 1;
+      }
+      const name = args[1];
+      const description = args.slice(2).join(" ");
+      const result = await addKeyMoment(name, description, undefined, opts);
+      if (!result.ok) {
+        console.error(ansi.red(`Error: ${result.error}`));
+        return 1;
+      }
+      console.log(ansi.green(`Added moment to ${name}: "${description}"`));
+      return 0;
+    }
+
+    default:
+      console.error(ansi.red(`Unknown rel subcommand: ${sub}`));
+      console.error('Run "pai-seed rel help" for usage.');
+      return 1;
+  }
+}
+
+// =============================================================================
 // F-011: Help Text
 // =============================================================================
 
@@ -301,16 +419,22 @@ ${ansi.bold("Commands:")}
   diff                      Show git diff for seed.json
   learn <type> <content>    Add a confirmed learning
   forget <id>               Remove a learning by ID
+  rel <subcommand>          Manage relationships
   repair                    Auto-repair from git history
   help                      Show this help
 
 ${ansi.bold("Types for learn:")}
   pattern, insight, self_knowledge
 
+${ansi.bold("Rel subcommands:")}
+  list, show <name>, add <name> [context], moment <name> <desc>
+
 ${ansi.bold("Examples:")}
   pai-seed show
   pai-seed learn pattern "User prefers concise responses"
   pai-seed forget abc123
+  pai-seed rel add Alice "Colleague from project X"
+  pai-seed rel moment Alice "Helped with deployment"
   pai-seed diff
   pai-seed repair`);
 }
@@ -334,6 +458,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       return cmdLearn(args);
     case "forget":
       return cmdForget(args);
+    case "rel":
+      return cmdRel(args);
     case "repair":
       return cmdRepair();
     case "help":

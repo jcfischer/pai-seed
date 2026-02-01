@@ -269,6 +269,61 @@ describe("repair command", () => {
 });
 
 // =============================================================================
+// T-13.7: CLI rel Subcommand
+// =============================================================================
+
+describe("rel command", () => {
+  test("rel list outputs names", async () => {
+    const seed = createDefaultSeed();
+    await writeSeed(seed, seedPath);
+
+    // First add a relationship
+    const { exitCode: addCode } = await runCLI(["rel", "add", "TestPerson", "A friend"]);
+    expect(addCode).toBe(0);
+
+    const { stdout, exitCode } = await runCLI(["rel", "list"]);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("testperson");
+  });
+
+  test("rel show displays relationship details", async () => {
+    const seed = createDefaultSeed();
+    await writeSeed(seed, seedPath);
+
+    await runCLI(["rel", "add", "ShowTest", "Colleague"]);
+    const { stdout, exitCode } = await runCLI(["rel", "show", "ShowTest"]);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("ShowTest");
+    expect(stdout).toContain("Colleague");
+  });
+
+  test("rel add creates relationship", async () => {
+    const seed = createDefaultSeed();
+    await writeSeed(seed, seedPath);
+
+    const { stdout, exitCode } = await runCLI(["rel", "add", "NewPerson", "Met at conference"]);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("Added relationship");
+  });
+
+  test("rel moment adds key moment", async () => {
+    const seed = createDefaultSeed();
+    await writeSeed(seed, seedPath);
+
+    await runCLI(["rel", "add", "MomentTest"]);
+    const { stdout, exitCode } = await runCLI(["rel", "moment", "MomentTest", "Had lunch together"]);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("Added moment");
+  });
+
+  test("rel with no subcommand shows usage", async () => {
+    const { stdout, exitCode } = await runCLI(["rel"]);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("Subcommands");
+  });
+});
+
+// =============================================================================
 // T-11.8: Package Integration
 // =============================================================================
 
