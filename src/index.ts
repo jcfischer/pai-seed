@@ -263,3 +263,16 @@ export {
   listRelationships,
   addKeyMoment,
 } from "./relationships";
+
+// =============================================================================
+// F-016: Redaction support
+// =============================================================================
+
+// Types
+export type { RedactionData, RedactResult, RedactionOptions } from "./redaction";
+
+// Schemas
+export { redactionDataSchema } from "./redaction";
+
+// Functions
+export { getRedactedIds, isRedacted, redactEvent } from "./redaction";

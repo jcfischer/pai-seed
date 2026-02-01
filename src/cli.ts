@@ -12,6 +12,7 @@ import {
   listRelationships,
   addKeyMoment,
 } from "./relationships";
+import { redactEvent } from "./redaction";
 
 // =============================================================================
 // F-011: ANSI Helpers
@@ -404,6 +405,32 @@ ${ansi.bold("Subcommands:")}
 }
 
 // =============================================================================
+// F-016: Redact Command
+// =============================================================================
+
+async function cmdRedact(args: string[]): Promise<number> {
+  if (args.length < 1) {
+    console.error(ansi.red("Usage: pai-seed redact <event_id> [reason]"));
+    return 1;
+  }
+
+  const eventId = args[0];
+  const reason = args.slice(1).join(" ") || undefined;
+
+  const result = await redactEvent(eventId, reason);
+  if (!result.ok) {
+    console.error(ansi.red(`Error: ${result.error}`));
+    return 1;
+  }
+
+  console.log(ansi.green(`Redacted event: ${result.redactedEventId}`));
+  if (reason) {
+    console.log(ansi.dim(`Reason: ${reason}`));
+  }
+  return 0;
+}
+
+// =============================================================================
 // F-011: Help Text
 // =============================================================================
 
@@ -420,6 +447,7 @@ ${ansi.bold("Commands:")}
   learn <type> <content>    Add a confirmed learning
   forget <id>               Remove a learning by ID
   rel <subcommand>          Manage relationships
+  redact <id> [reason]      Redact an event from the log
   repair                    Auto-repair from git history
   help                      Show this help
 
@@ -460,6 +488,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       return cmdForget(args);
     case "rel":
       return cmdRel(args);
+    case "redact":
+      return cmdRedact(args);
     case "repair":
       return cmdRepair();
     case "help":

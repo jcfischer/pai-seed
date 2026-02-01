@@ -18,6 +18,7 @@ export const eventTypeSchema = z.enum([
   "proposal_rejected",
   "error",
   "custom",
+  "redaction",
 ]);
 
 export const systemEventSchema = z.object({
@@ -46,6 +47,7 @@ export type ReadEventsOptions = {
   since?: Date;
   until?: Date;
   limit?: number;
+  includeRedacted?: boolean;
 };
 
 // =============================================================================
@@ -168,15 +170,31 @@ export async function readEvents(
     }
   }
 
+  // Filter redacted events unless explicitly included
+  let filtered = allEvents;
+  if (!options?.includeRedacted) {
+    const redactedIds = new Set<string>();
+    for (const event of allEvents) {
+      if (event.type === "redaction" && typeof event.data.redactedEventId === "string") {
+        redactedIds.add(event.data.redactedEventId);
+      }
+    }
+    if (redactedIds.size > 0) {
+      filtered = allEvents.filter(
+        (e) => !redactedIds.has(e.id) && e.type !== "redaction",
+      );
+    }
+  }
+
   // Sort chronologically (ISO strings sort lexicographically)
-  allEvents.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  filtered.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 
   // Apply limit
   if (options?.limit !== undefined) {
-    return allEvents.slice(0, options.limit);
+    return filtered.slice(0, options.limit);
   }
 
-  return allEvents;
+  return filtered;
 }
 
 // =============================================================================
