@@ -1,6 +1,14 @@
 # pai-seed
 
-Typed seed file management for PAI (Personal AI Infrastructure). Provides schema validation, git-backed persistence, session hooks, event logging, and learning lifecycle management for `seed.json` — the file that stores an AI assistant's identity, learned patterns, and operational state.
+## Why pai-seed exists
+
+Most AI assistants suffer from session amnesia. Every conversation starts cold — the AI doesn't know what happened yesterday, repeats mistakes, loses learned patterns, and has no continuity with people or projects. Tools like ChatGPT, Claude, and Gemini answer your question, then forget everything. Next session starts fresh.
+
+pai-seed addresses this by implementing an idea from Arbor: **"the subconscious proposes, the conscious decides."** After each session, the system automatically extracts learning candidates from the interaction — patterns it noticed, insights it formed, things it learned about itself. These become *proposals*, stored quietly until the next session. At session start, they're presented for review. The user confirms what's accurate, rejects what isn't. Confirmed learnings persist and shape future behavior. Over time, the AI accumulates genuine understanding rather than static instructions.
+
+This is the core loop that makes `seed.json` different from a configuration file. A config file is written once and read forever. A seed file *grows*. It captures who the AI is becoming through lived interaction — identity, learned patterns, operational state — all versioned in git so you can see the AI's evolution over time.
+
+pai-seed provides the typed infrastructure for this lifecycle: schema validation, git-backed persistence, session hooks, event logging, learning decay, and the full propose-confirm-persist pipeline that turns transient sessions into durable intelligence.
 
 **510 tests | 16 features | 0 failures**
 
@@ -38,7 +46,7 @@ Layer 1: Foundation
 {
   "version": "1.0.0",
   "identity": {
-    "principalName": "Daniel",
+    "principalName": "Jens-Christian",
     "aiName": "Ivy",
     "catchphrase": "Ivy here, ready to go.",
     "voiceId": "",

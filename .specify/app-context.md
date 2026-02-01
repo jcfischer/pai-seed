@@ -8,7 +8,7 @@ PAI (Personal AI Infrastructure) suffers from session amnesia. Every session sta
 
 ## Users & Stakeholders
 
-- **Primary user:** Daniel (PAI operator) — both reads and writes seed.json actively
+- **Primary user:** Jens-Christian (PAI operator) — both reads and writes seed.json actively
 - **Primary AI:** Ivy (PAI instance) — reads on startup, proposes learnings for persistence
 - **Interaction model:** User configures identity; AI extracts learnings; both read/write regularly
 - **External:** pai-collab agents may eventually read (but multi-agent sharing is OUT of scope for v1)

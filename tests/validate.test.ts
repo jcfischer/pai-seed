@@ -45,7 +45,7 @@ describe("validateSeed", () => {
     expect(result.valid).toBe(true);
     if (result.valid) {
       expect(result.config.version).toBe("1.0.0");
-      expect(result.config.identity.principalName).toBe("Daniel");
+      expect(result.config.identity.principalName).toBe("Jens-Christian");
       expect(result.config.learned.patterns.length).toBe(3);
       expect(result.config.state.proposals.length).toBe(3);
     }

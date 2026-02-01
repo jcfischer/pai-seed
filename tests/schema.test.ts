@@ -42,7 +42,7 @@ function validProposal(): Proposal {
 
 function validIdentity(): IdentityLayer {
   return {
-    principalName: "Daniel",
+    principalName: "Jens-Christian",
     aiName: "Ivy",
     catchphrase: "Ivy here, ready to go.",
     voiceId: "EXAVITQu4vr4xnSDxMaL",
@@ -413,7 +413,7 @@ describe("seedConfigSchema", () => {
     // This test verifies TypeScript types compile correctly
     const config: SeedConfig = validSeedConfig();
     expect(config.version).toBe("1.0.0");
-    expect(config.identity.principalName).toBe("Daniel");
+    expect(config.identity.principalName).toBe("Jens-Christian");
     expect(config.learned.patterns).toEqual([]);
     expect(config.state.proposals).toEqual([]);
   });

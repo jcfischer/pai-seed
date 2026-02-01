@@ -52,9 +52,9 @@ Key integration paths verified:
 
 1. **First-run detection (no file):** `isFirstRun()` on empty directory returns `true`
 2. **First-run detection (default):** Seed with principalName "User" returns `true`
-3. **Customized detection:** Seed with principalName "Daniel" returns `false`
+3. **Customized detection:** Seed with principalName "Jens-Christian" returns `false`
 4. **Timezone detection:** `detectTimezone()` returns valid IANA string (e.g., "Europe/Zurich")
-5. **Config from minimal answers:** `buildSeedFromAnswers({ principalName: "Daniel" })` produces valid SeedConfig with defaults
+5. **Config from minimal answers:** `buildSeedFromAnswers({ principalName: "Jens-Christian" })` produces valid SeedConfig with defaults
 6. **Catchphrase derivation:** aiName "Ivy" without catchphrase → "Ivy here, ready to go."
 7. **Full setup flow:** `runSetup()` creates seed, commits to git with "Init: first-run setup completed"
 8. **Idempotent setup:** Second `runSetup()` call returns existing config with `created: false`

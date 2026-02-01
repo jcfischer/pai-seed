@@ -112,7 +112,7 @@ Provide `formatIdentitySummary(identity: IdentityLayer): string` that:
 - Returns multi-line readable text
 - Example output:
   ```
-  Identity: Ivy (serving Daniel)
+  Identity: Ivy (serving Jens-Christian)
   Catchphrase: "Ivy here, ready to go."
   Style: adaptive | Timezone: Europe/Zurich | Locale: en-US
   ```

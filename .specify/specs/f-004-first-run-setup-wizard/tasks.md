@@ -93,7 +93,7 @@
 **Tests (~5):**
 - No seed file → returns `true`
 - Default seed (principalName "User") → returns `true`
-- Customized seed (principalName "Daniel") → returns `false`
+- Customized seed (principalName "Jens-Christian") → returns `false`
 - Corrupted file → returns `true` (safe default)
 - Performance: completes in < 100ms
 

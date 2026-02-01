@@ -57,7 +57,7 @@ async function initTestGitRepo(dir: string): Promise<void> {
 describe("setupAnswersSchema", () => {
   test("accepts valid full answers", () => {
     const input = {
-      principalName: "Daniel",
+      principalName: "Jens-Christian",
       aiName: "Nova",
       catchphrase: "Nova online.",
       voiceId: "custom-voice-123",
@@ -69,7 +69,7 @@ describe("setupAnswersSchema", () => {
     const result = setupAnswersSchema.safeParse(input);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.principalName).toBe("Daniel");
+      expect(result.data.principalName).toBe("Jens-Christian");
       expect(result.data.aiName).toBe("Nova");
       expect(result.data.catchphrase).toBe("Nova online.");
       expect(result.data.voiceId).toBe("custom-voice-123");
@@ -142,7 +142,7 @@ describe("detectTimezone", () => {
 describe("buildSeedFromAnswers", () => {
   test("all fields provided: valid SeedConfig with all overrides applied", () => {
     const answers: SetupAnswers = {
-      principalName: "Daniel",
+      principalName: "Jens-Christian",
       aiName: "Nova",
       catchphrase: "Nova reporting for duty.",
       voiceId: "voice-abc",
@@ -154,7 +154,7 @@ describe("buildSeedFromAnswers", () => {
     const config = buildSeedFromAnswers(answers);
 
     // Identity overrides
-    expect(config.identity.principalName).toBe("Daniel");
+    expect(config.identity.principalName).toBe("Jens-Christian");
     expect(config.identity.aiName).toBe("Nova");
     expect(config.identity.catchphrase).toBe("Nova reporting for duty.");
     expect(config.identity.voiceId).toBe("voice-abc");
@@ -239,10 +239,10 @@ describe("isFirstRun", () => {
     expect(result).toBe(true);
   });
 
-  test("customized seed (principalName 'Daniel'): returns false", async () => {
+  test("customized seed (principalName 'Jens-Christian'): returns false", async () => {
     const seedPath = join(testDir, "seed.json");
     const config = createDefaultSeed();
-    config.identity.principalName = "Daniel";
+    config.identity.principalName = "Jens-Christian";
     config.identity.aiName = "Nova";
     config.identity.catchphrase = "Nova online.";
     await writeSeed(config, seedPath);
@@ -282,7 +282,7 @@ describe("runSetup", () => {
     await initTestGitRepo(testDir);
 
     const answers: SetupAnswers = {
-      principalName: "Daniel",
+      principalName: "Jens-Christian",
       aiName: "Nova",
       catchphrase: "Nova online.",
     };
@@ -292,7 +292,7 @@ describe("runSetup", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.created).toBe(true);
-      expect(result.config.identity.principalName).toBe("Daniel");
+      expect(result.config.identity.principalName).toBe("Jens-Christian");
       expect(result.config.identity.aiName).toBe("Nova");
       expect(result.config.identity.catchphrase).toBe("Nova online.");
     }
@@ -308,7 +308,7 @@ describe("runSetup", () => {
 
     // Pre-write a customized seed
     const existing = createDefaultSeed();
-    existing.identity.principalName = "Daniel";
+    existing.identity.principalName = "Jens-Christian";
     existing.identity.aiName = "Nova";
     existing.identity.catchphrase = "Nova online.";
     await writeSeed(existing, seedPath);
@@ -324,7 +324,7 @@ describe("runSetup", () => {
     if (result.ok) {
       expect(result.created).toBe(false);
       // Should return the EXISTING config, not the new answers
-      expect(result.config.identity.principalName).toBe("Daniel");
+      expect(result.config.identity.principalName).toBe("Jens-Christian");
       expect(result.config.identity.aiName).toBe("Nova");
     }
   });
@@ -334,7 +334,7 @@ describe("runSetup", () => {
     await initTestGitRepo(testDir);
 
     const answers: SetupAnswers = {
-      principalName: "Daniel",
+      principalName: "Jens-Christian",
       aiName: "Atlas",
     };
 
@@ -350,7 +350,7 @@ describe("runSetup", () => {
     await initTestGitRepo(testDir);
 
     const answers: SetupAnswers = {
-      principalName: "Daniel",
+      principalName: "Jens-Christian",
       aiName: "Nova",
     };
 
@@ -365,7 +365,7 @@ describe("runSetup", () => {
     if (second.ok) {
       expect(second.created).toBe(false);
       // Should preserve the config from the first run
-      expect(second.config.identity.principalName).toBe("Daniel");
+      expect(second.config.identity.principalName).toBe("Jens-Christian");
     }
   });
 });

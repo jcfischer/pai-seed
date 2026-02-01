@@ -33,7 +33,7 @@ function makeProposal(index: number) {
 const seed = {
   version: "1.0.0",
   identity: {
-    principalName: "Daniel",
+    principalName: "Jens-Christian",
     aiName: "Ivy",
     catchphrase: "Ivy here, ready to go.",
     voiceId: "EXAVITQu4vr4xnSDxMaL",

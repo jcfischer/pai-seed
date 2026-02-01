@@ -86,7 +86,7 @@ afterEach(async () => {
 describe("formatIdentitySummary", () => {
   test("custom identity values formatted correctly", () => {
     const identity: IdentityLayer = {
-      principalName: "Daniel",
+      principalName: "Jens-Christian",
       aiName: "Nova",
       catchphrase: "Nova online.",
       voiceId: "voice-123",
@@ -100,7 +100,7 @@ describe("formatIdentitySummary", () => {
     const result = formatIdentitySummary(identity);
 
     expect(result).toContain("Nova");
-    expect(result).toContain("Daniel");
+    expect(result).toContain("Jens-Christian");
     expect(result).toContain("Nova online.");
     expect(result).toContain("concise");
     expect(result).toContain("Europe/Zurich");
@@ -325,7 +325,7 @@ describe("generateSessionContext", () => {
     await initTestGitRepo(testDir);
 
     const seed = createDefaultSeed();
-    seed.identity.principalName = "Daniel";
+    seed.identity.principalName = "Jens-Christian";
     seed.identity.aiName = "Nova";
     seed.identity.catchphrase = "Nova online.";
     seed.learned.patterns = [makeLearning("Test pattern", true)];
@@ -340,7 +340,7 @@ describe("generateSessionContext", () => {
       expect(result.needsSetup).toBe(false);
       expect(result.config).not.toBeNull();
       expect(result.context).toContain("Nova");
-      expect(result.context).toContain("Daniel");
+      expect(result.context).toContain("Jens-Christian");
       expect(result.context).toContain("Test pattern");
       expect(result.context).toContain("Test proposal");
       expect(result.context).toContain("pai-seed");
@@ -378,7 +378,7 @@ describe("generateSessionContext", () => {
     await initTestGitRepo(testDir);
 
     const seed = createDefaultSeed();
-    seed.identity.principalName = "Daniel";
+    seed.identity.principalName = "Jens-Christian";
     seed.identity.aiName = "Nova";
     seed.identity.catchphrase = "Nova online.";
     // learned is already empty by default
@@ -398,7 +398,7 @@ describe("generateSessionContext", () => {
     await initTestGitRepo(testDir);
 
     const seed = createDefaultSeed();
-    seed.identity.principalName = "Daniel";
+    seed.identity.principalName = "Jens-Christian";
     seed.identity.aiName = "Nova";
     seed.identity.catchphrase = "Nova online.";
     seed.state.proposals = [makeProposal("Old one", "accepted")];
@@ -417,7 +417,7 @@ describe("generateSessionContext", () => {
     await initTestGitRepo(testDir);
 
     const seed = createDefaultSeed();
-    seed.identity.principalName = "Daniel";
+    seed.identity.principalName = "Jens-Christian";
     seed.identity.aiName = "Nova";
     seed.identity.catchphrase = "Nova online.";
     seed.state.proposals = [
@@ -440,7 +440,7 @@ describe("generateSessionContext", () => {
     await initTestGitRepo(testDir);
 
     const seed = createDefaultSeed();
-    seed.identity.principalName = "Daniel";
+    seed.identity.principalName = "Jens-Christian";
     seed.identity.aiName = "Nova";
     seed.identity.catchphrase = "Nova online.";
     await writeSeed(seed, seedPath);
@@ -457,7 +457,7 @@ describe("generateSessionContext", () => {
     await initTestGitRepo(testDir);
 
     const seed = createDefaultSeed();
-    seed.identity.principalName = "Daniel";
+    seed.identity.principalName = "Jens-Christian";
     seed.identity.aiName = "Nova";
     seed.identity.catchphrase = "Nova online.";
     await writeSeed(seed, seedPath);
@@ -468,7 +468,7 @@ describe("generateSessionContext", () => {
     if (result.ok) {
       expect(result.context).toContain("Identity:");
       expect(result.context).toContain("Nova");
-      expect(result.context).toContain("Daniel");
+      expect(result.context).toContain("Jens-Christian");
     }
   });
 
@@ -477,7 +477,7 @@ describe("generateSessionContext", () => {
     await initTestGitRepo(testDir);
 
     const seed = createDefaultSeed();
-    seed.identity.principalName = "Daniel";
+    seed.identity.principalName = "Jens-Christian";
     seed.identity.aiName = "Nova";
     seed.identity.catchphrase = "Nova online.";
     seed.learned.patterns = [makeLearning("A real pattern", true)];
@@ -501,7 +501,7 @@ describe("generateSessionContext", () => {
     await initTestGitRepo(testDir);
 
     const seed = createDefaultSeed();
-    seed.identity.principalName = "Daniel";
+    seed.identity.principalName = "Jens-Christian";
     seed.identity.aiName = "Nova";
     seed.identity.catchphrase = "Nova online.";
     await writeSeed(seed, seedPath);
@@ -525,7 +525,7 @@ describe("sessionStartHook", () => {
     await initTestGitRepo(testDir);
 
     const seed = createDefaultSeed();
-    seed.identity.principalName = "Daniel";
+    seed.identity.principalName = "Jens-Christian";
     seed.identity.aiName = "Nova";
     seed.identity.catchphrase = "Nova online.";
     await writeSeed(seed, seedPath);

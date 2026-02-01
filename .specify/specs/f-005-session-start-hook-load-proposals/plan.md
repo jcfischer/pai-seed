@@ -122,7 +122,7 @@ export function formatIdentitySummary(identity: IdentityLayer): string
 
 **Output example:**
 ```
-Identity: Ivy (serving Daniel)
+Identity: Ivy (serving Jens-Christian)
 Catchphrase: "Ivy here, ready to go."
 Style: adaptive | Timezone: Europe/Zurich | Locale: en-US
 ```
@@ -289,7 +289,7 @@ The complete formatted context string produced by `generateSessionContext()`:
 
 ```
 Seed: v1.0.0
-Identity: Ivy (serving Daniel)
+Identity: Ivy (serving Jens-Christian)
 Catchphrase: "Ivy here, ready to go."
 Style: adaptive | Timezone: Europe/Zurich | Locale: en-US
 
