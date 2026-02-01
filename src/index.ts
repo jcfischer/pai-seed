@@ -109,3 +109,16 @@ export {
   writeProposals,
   extractionHook,
 } from "./extraction";
+
+// =============================================================================
+// F-008: Event log foundation
+// =============================================================================
+
+// Types
+export type { EventType, SystemEvent, AppendResult, ReadEventsOptions } from "./events";
+
+// Schemas
+export { eventTypeSchema, systemEventSchema } from "./events";
+
+// Functions
+export { resolveEventsDir, appendEvent, readEvents, countEvents, logEvent } from "./events";
