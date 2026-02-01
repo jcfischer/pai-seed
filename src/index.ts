@@ -122,3 +122,21 @@ export { eventTypeSchema, systemEventSchema } from "./events";
 
 // Functions
 export { resolveEventsDir, appendEvent, readEvents, countEvents, logEvent } from "./events";
+
+// =============================================================================
+// F-007: Proposal confirmation flow
+// =============================================================================
+
+// Types
+export type { PendingResult, ConfirmResult, RejectResult, BulkResult } from "./confirmation";
+
+// Functions
+export {
+  proposalToLearning,
+  getPendingProposals,
+  acceptProposal,
+  rejectProposal,
+  acceptAllProposals,
+  rejectAllProposals,
+  cleanRejected,
+} from "./confirmation";
