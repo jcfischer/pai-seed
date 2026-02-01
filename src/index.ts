@@ -157,6 +157,32 @@ export {
 } from "./compaction";
 
 // =============================================================================
+// F-010: Checkpoint system
+// =============================================================================
+
+// Types
+export type {
+  CheckpointState,
+  CheckpointResult,
+  CheckpointOptions,
+  IscCriterionSnapshot,
+} from "./checkpoint";
+
+// Schemas
+export { checkpointStateSchema, iscCriterionSnapshotSchema } from "./checkpoint";
+
+// Functions
+export {
+  createCheckpoint,
+  loadCheckpoint,
+  listCheckpoints,
+  detectIncompleteCheckpoint,
+  completeCheckpoint,
+  cleanupCheckpoints,
+  resolveCheckpointsDir,
+} from "./checkpoint";
+
+// =============================================================================
 // F-007: Proposal confirmation flow
 // =============================================================================
 
