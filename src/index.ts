@@ -124,6 +124,39 @@ export { eventTypeSchema, systemEventSchema } from "./events";
 export { resolveEventsDir, appendEvent, readEvents, countEvents, logEvent } from "./events";
 
 // =============================================================================
+// F-009: Event log compaction
+// =============================================================================
+
+// Types
+export type {
+  PeriodSummary,
+  CompactionResult,
+  CompactionOptions,
+  TimeDistribution,
+  SessionStats,
+  Anomaly,
+} from "./compaction";
+
+// Schemas
+export {
+  periodSummarySchema,
+  timeDistributionSchema,
+  sessionStatsSchema,
+  anomalySchema,
+} from "./compaction";
+
+// Functions
+export {
+  compactEvents,
+  generatePeriodSummary,
+  formatCompactionMessage,
+  initEventIndex,
+  rebuildIndex,
+  findEligiblePeriods,
+  resolveArchiveDir,
+} from "./compaction";
+
+// =============================================================================
 // F-007: Proposal confirmation flow
 // =============================================================================
 
