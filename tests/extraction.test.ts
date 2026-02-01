@@ -843,16 +843,16 @@ describe("F-017: extractionHook with ACR", () => {
     }
   });
 
-  test("ACR returns empty learnings: no fallback, 0 proposals", async () => {
+  test("ACR returns empty learnings: falls back to regex", async () => {
     const restore = mockAcrCli({ ok: true, learnings: [] });
     try {
-      // Transcript has signal phrases, but ACR ok:true with empty means no fallback
+      // ACR returned ok:true but empty — should fall back to regex
       const transcript = "I noticed that patterns matter for extraction.";
       const result = await extractionHook(transcript, "test-session", seedPath);
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.added).toBe(0);
-        expect(result.total).toBe(0);
+        // Regex picks up "I noticed"
+        expect(result.total).toBeGreaterThanOrEqual(1);
       }
     } finally {
       restore();
@@ -995,7 +995,7 @@ describe("F-017: confidence threshold filtering", () => {
     }
   });
 
-  test("all learnings filtered below threshold returns empty, no fallback", async () => {
+  test("all learnings filtered below threshold: falls back to regex", async () => {
     const restore = mockAcrCli({
       ok: true,
       learnings: [
@@ -1004,13 +1004,13 @@ describe("F-017: confidence threshold filtering", () => {
       ],
     });
     try {
-      // Even though transcript has signal phrases, ACR ok:true means no regex fallback
+      // ACR returned learnings but all below threshold — should fall back to regex
       const transcript = "I noticed something but ACR confidence is low.";
       const result = await extractionHook(transcript, "test-session", seedPath);
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.added).toBe(0);
-        expect(result.total).toBe(0);
+        // Regex picks up "I noticed"
+        expect(result.total).toBeGreaterThanOrEqual(1);
       }
     } finally {
       restore();

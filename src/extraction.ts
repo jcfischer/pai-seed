@@ -296,19 +296,27 @@ export async function extractionHook(
     const acrResult = await callAcrExtraction(transcript);
 
     if (acrResult.ok) {
-      // ACR succeeded — use its results (even if empty, no fallback to regex)
-      // Apply confidence filtering via PAI_EXTRACTION_CONFIDENCE env var
+      // ACR succeeded — apply confidence filtering
       const threshold = parseFloat(
         process.env.PAI_EXTRACTION_CONFIDENCE || "0.7",
       );
       const filtered = acrResult.learnings.filter(
         (l) => l.confidence >= threshold,
       );
-      proposals = acrLearningsToProposals(filtered, sessionId);
+
+      if (filtered.length > 0) {
+        // ACR found high-confidence learnings — use them
+        proposals = acrLearningsToProposals(filtered, sessionId);
+      } else {
+        // ACR returned nothing above threshold — fall back to regex
+        proposals = extractProposals(transcript, sessionId);
+        for (const p of proposals) {
+          p.method = "regex";
+        }
+      }
     } else {
       // ACR unavailable — fall back to regex extraction
       proposals = extractProposals(transcript, sessionId);
-      // Tag regex proposals with method
       for (const p of proposals) {
         p.method = "regex";
       }
