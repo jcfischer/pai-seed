@@ -288,6 +288,16 @@ export { redactionDataSchema } from "./redaction";
 export { getRedactedIds, isRedacted, redactEvent } from "./redaction";
 
 // =============================================================================
+// F-018: ID prefix resolution
+// =============================================================================
+
+// Types
+export type { IdPrefixResult } from "./id-prefix";
+
+// Functions
+export { resolveIdPrefix } from "./id-prefix";
+
+// =============================================================================
 // F-015: Learning decay and freshness
 // =============================================================================
 
