@@ -1,5 +1,15 @@
 # F-018: Proposals & Learnings CLI — Verification
 
+## Pre-Verification Checklist
+
+- [x] spec.md exists and approved
+- [x] plan.md exists and approved
+- [x] tasks.md exists, all tasks implemented
+- [x] All source files created: `src/id-prefix.ts`, `src/cli.ts` (modified), `src/index.ts` (modified)
+- [x] All test files created: `tests/id-prefix.test.ts`, `tests/cli-proposals.test.ts`
+- [x] No TypeScript errors
+- [x] No security issues (gitleaks passed)
+
 ## Test Results
 
 ```
@@ -13,7 +23,7 @@ F-018 specific:
  - tests/cli-proposals.test.ts: 11 pass
 ```
 
-## Smoke Tests
+## Smoke Test Results
 
 ### proposals list (41 pending)
 ```
@@ -43,11 +53,19 @@ pai-seed — CLI for seed.json management
 Commands:
   proposals <action>        Manage pending proposals
   learnings <action>        Browse confirmed learnings
-  ...
 
 Proposals: list, accept <id>, reject <id>, review, accept-all, reject-all, clean
 Learnings: list [--type=X], show <id>, search <query>
 ```
+
+## Browser Verification
+
+N/A — This is a CLI-only feature with no browser UI.
+
+## API Verification
+
+N/A — This feature operates on local seed.json via the CLI. No external API calls.
+Library functions (`resolveIdPrefix`, confirmation functions) are tested via unit tests.
 
 ## ISC Verification
 
