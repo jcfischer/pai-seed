@@ -94,3 +94,18 @@ export {
   generateSessionContext,
   sessionStartHook,
 } from "./session";
+
+// =============================================================================
+// F-006: Post-session extraction
+// =============================================================================
+
+// Types
+export type { LearningSignal, SignalType, WriteProposalsResult, ExtractionResult } from "./extraction";
+
+// Functions
+export {
+  detectLearningSignals,
+  extractProposals,
+  writeProposals,
+  extractionHook,
+} from "./extraction";
