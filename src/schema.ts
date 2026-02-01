@@ -29,6 +29,7 @@ export const proposalSchema = z.object({
   source: z.string().min(1),
   extractedAt: z.string().datetime(),
   status: z.enum(["pending", "accepted", "rejected"]),
+  method: z.enum(["acr", "regex"]).optional(),
 });
 
 // =============================================================================

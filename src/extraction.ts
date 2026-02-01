@@ -23,6 +23,30 @@ export type ExtractionResult =
   | { ok: false; error: string };
 
 // =============================================================================
+// F-017: ACR Semantic Extraction Types
+// =============================================================================
+
+export type AcrExtractionResult =
+  | {
+      ok: true;
+      learnings: Array<{
+        type: "pattern" | "insight" | "self_knowledge";
+        content: string;
+        confidence: number;
+      }>;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
+export type AcrExtractionOptions = {
+  acrBinary?: string;
+  timeout?: number;
+  confidence?: number;
+};
+
+// =============================================================================
 // F-006: Signal Phrases
 // =============================================================================
 
@@ -209,16 +233,56 @@ export async function writeProposals(
 }
 
 // =============================================================================
-// F-006 4: extractionHook — I/O orchestrator
+// F-017: acrLearningsToProposals — Convert ACR learnings to Proposals
 // =============================================================================
 
 /**
- * End-to-end extraction hook: detect signals, create proposals, write to seed.
+ * Convert ACR extraction learnings to Proposal objects.
+ * Deduplicates by content (case-insensitive).
+ */
+function acrLearningsToProposals(
+  learnings: Array<{
+    type: "pattern" | "insight" | "self_knowledge";
+    content: string;
+    confidence: number;
+  }>,
+  sessionId?: string,
+): Proposal[] {
+  const source = sessionId ?? "unknown-session";
+  const now = new Date().toISOString();
+  const seen = new Set<string>();
+
+  return learnings
+    .filter((l) => {
+      const key = l.content.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .map((l) => ({
+      id: nanoid(),
+      type: l.type,
+      content: l.content,
+      source,
+      extractedAt: now,
+      status: "pending" as const,
+      method: "acr" as const,
+    }));
+}
+
+// =============================================================================
+// F-006/F-017: extractionHook — I/O orchestrator (ACR-first with regex fallback)
+// =============================================================================
+
+/**
+ * End-to-end extraction hook: try ACR semantic extraction first, fall back to regex.
  *
- * - Call extractProposals; if empty return { ok: true, added: 0, total: 0 }
- * - Call writeProposals
- * - Never throws (wrap in try/catch)
- * - Return { ok: true, added, total }
+ * Strategy:
+ * - Try ACR first via callAcrExtraction()
+ * - If ACR returns ok:true, use its results (even if empty — no regex fallback)
+ * - Apply confidence threshold filtering (PAI_EXTRACTION_CONFIDENCE env, default 0.7)
+ * - If ACR returns ok:false (binary not found, timeout, error), fall back to regex
+ * - Write proposals to seed, never throws
  */
 export async function extractionHook(
   transcript: string,
@@ -226,7 +290,30 @@ export async function extractionHook(
   seedPath?: string,
 ): Promise<ExtractionResult> {
   try {
-    const proposals = extractProposals(transcript, sessionId);
+    let proposals: Proposal[];
+
+    // Try ACR semantic extraction first
+    const acrResult = await callAcrExtraction(transcript);
+
+    if (acrResult.ok) {
+      // ACR succeeded — use its results (even if empty, no fallback to regex)
+      // Apply confidence filtering via PAI_EXTRACTION_CONFIDENCE env var
+      const threshold = parseFloat(
+        process.env.PAI_EXTRACTION_CONFIDENCE || "0.7",
+      );
+      const filtered = acrResult.learnings.filter(
+        (l) => l.confidence >= threshold,
+      );
+      proposals = acrLearningsToProposals(filtered, sessionId);
+    } else {
+      // ACR unavailable — fall back to regex extraction
+      proposals = extractProposals(transcript, sessionId);
+      // Tag regex proposals with method
+      for (const p of proposals) {
+        p.method = "regex";
+      }
+    }
+
     if (proposals.length === 0) {
       return { ok: true, added: 0, total: 0 };
     }
@@ -244,6 +331,90 @@ export async function extractionHook(
       ok: false,
       error: err instanceof Error ? err.message : String(err),
     };
+  }
+}
+
+// =============================================================================
+// F-017: callAcrExtraction — CLI interface to ACR
+// =============================================================================
+
+/**
+ * Call ACR's semantic extraction endpoint via CLI.
+ * Pipes transcript to stdin, parses JSON from stdout.
+ * Returns structured result or error (never throws).
+ */
+export async function callAcrExtraction(
+  transcript: string,
+  options?: AcrExtractionOptions,
+): Promise<AcrExtractionResult> {
+  const acrBinary = options?.acrBinary ?? "acr";
+  const timeout = options?.timeout ?? 30000;
+  const confidence = options?.confidence ??
+    parseFloat(process.env.PAI_EXTRACTION_CONFIDENCE || "0.7");
+
+  try {
+    // Check if ACR binary exists
+    const binaryPath = Bun.which(acrBinary);
+    if (!binaryPath) {
+      return { ok: false, error: `ACR binary not found: ${acrBinary}` };
+    }
+
+    // Spawn ACR process
+    const proc = Bun.spawn(
+      [acrBinary, "--extract-learnings", "--json", "--confidence", String(confidence)],
+      {
+        stdin: new Response(transcript).body!,
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+
+    // Race between process completion and timeout
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => {
+        proc.kill();
+        reject(new Error(`ACR extraction timed out after ${timeout}ms`));
+      }, timeout),
+    );
+
+    const exitCode = await Promise.race([proc.exited, timeoutPromise]);
+    const stdout = await new Response(proc.stdout).text();
+    const stderr = await new Response(proc.stderr).text();
+
+    if (exitCode !== 0) {
+      return {
+        ok: false,
+        error: `ACR extraction failed (exit ${exitCode}): ${stderr.trim() || "unknown error"}`,
+      };
+    }
+
+    // Parse JSON output
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(stdout);
+    } catch {
+      return { ok: false, error: "ACR returned invalid JSON" };
+    }
+
+    // Validate structure
+    if (typeof parsed !== "object" || parsed === null || !("ok" in parsed)) {
+      return { ok: false, error: "ACR returned unexpected response format" };
+    }
+
+    const result = parsed as AcrExtractionResult;
+    if (!result.ok) {
+      return { ok: false, error: result.error };
+    }
+
+    // Validate learnings array
+    if (!Array.isArray(result.learnings)) {
+      return { ok: false, error: "ACR response missing learnings array" };
+    }
+
+    return result;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: message };
   }
 }
 

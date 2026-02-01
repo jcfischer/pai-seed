@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach, afterEach } from "bun:test";
+import { describe, expect, test, beforeEach, afterEach, mock } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,6 +11,7 @@ import {
   extractProposals,
   writeProposals,
   extractionHook,
+  callAcrExtraction,
 } from "../src/extraction";
 
 // =============================================================================
@@ -514,5 +515,540 @@ describe("extractionHook", () => {
 
     expect(elapsed).toBeLessThan(100);
     expect(proposals.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+// =============================================================================
+// F-017: Proposal method field — Schema backward-compatibility tests
+// =============================================================================
+
+describe("F-017: Proposal method field", () => {
+  const baseProposal = {
+    id: "test-method-1",
+    type: "pattern" as const,
+    content: "You prefer TypeScript for all backend services",
+    source: "session-method-test",
+    extractedAt: new Date().toISOString(),
+    status: "pending" as const,
+  };
+
+  test("proposal without method field passes validation", () => {
+    const result = proposalSchema.safeParse(baseProposal);
+    expect(result.success).toBe(true);
+  });
+
+  test("proposal with method: 'acr' passes validation", () => {
+    const result = proposalSchema.safeParse({ ...baseProposal, method: "acr" });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.method).toBe("acr");
+    }
+  });
+
+  test("proposal with method: 'regex' passes validation", () => {
+    const result = proposalSchema.safeParse({ ...baseProposal, method: "regex" });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.method).toBe("regex");
+    }
+  });
+
+  test("proposal with invalid method fails validation", () => {
+    const result = proposalSchema.safeParse({ ...baseProposal, method: "invalid" });
+    expect(result.success).toBe(false);
+  });
+});
+
+// =============================================================================
+// F-017: callAcrExtraction — CLI interface tests
+// =============================================================================
+
+describe("F-017: callAcrExtraction", () => {
+  // Mock helpers
+  function mockAcrCli(output: object, exitCode = 0): () => void {
+    const originalSpawn = Bun.spawn;
+    const originalWhich = Bun.which;
+    const jsonOutput = JSON.stringify(output);
+
+    (Bun as any).which = mock(() => "/usr/local/bin/acr");
+    Bun.spawn = mock(() => {
+      const encoder = new TextEncoder();
+      const data = encoder.encode(jsonOutput);
+      const stdout = new Response(new Blob([data])).body!;
+      const stderr = new Response(exitCode !== 0 ? "error" : "").body!;
+      return {
+        stdout,
+        stderr,
+        exited: Promise.resolve(exitCode),
+        pid: 99999,
+        exitCode: null,
+        signalCode: null,
+        killed: false,
+        kill: () => {},
+        ref: () => {},
+        unref: () => {},
+        stdin: null,
+        resourceUsage: () => null,
+      } as any;
+    }) as any;
+
+    return () => {
+      Bun.spawn = originalSpawn;
+      (Bun as any).which = originalWhich;
+    };
+  }
+
+  test("successful extraction returns structured learnings", async () => {
+    // Mock ACR returning learnings
+    const restore = mockAcrCli({
+      ok: true,
+      learnings: [
+        { type: "pattern", content: "Prefers Bun", confidence: 0.85 },
+        { type: "insight", content: "LanceDB is fast", confidence: 0.72 },
+      ],
+    });
+    try {
+      const result = await callAcrExtraction("test transcript");
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.learnings).toHaveLength(2);
+        expect(result.learnings[0].type).toBe("pattern");
+        expect(result.learnings[0].confidence).toBe(0.85);
+      }
+    } finally {
+      restore();
+    }
+  });
+
+  test("binary not found returns error", async () => {
+    const originalWhich = Bun.which;
+    (Bun as any).which = mock(() => null);
+    try {
+      const result = await callAcrExtraction("test");
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toContain("not found");
+      }
+    } finally {
+      (Bun as any).which = originalWhich;
+    }
+  });
+
+  test("non-zero exit returns error with stderr", async () => {
+    const restore = mockAcrCli({}, 1);
+    try {
+      const result = await callAcrExtraction("test");
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toContain("failed");
+      }
+    } finally {
+      restore();
+    }
+  });
+
+  test("invalid JSON returns parse error", async () => {
+    const originalSpawn = Bun.spawn;
+    const originalWhich = Bun.which;
+    (Bun as any).which = mock(() => "/usr/local/bin/acr");
+    Bun.spawn = mock(() => {
+      const stdout = new Response("not json").body!;
+      const stderr = new Response("").body!;
+      return {
+        stdout, stderr,
+        exited: Promise.resolve(0),
+        pid: 99999, exitCode: null, signalCode: null, killed: false,
+        kill: () => {}, ref: () => {}, unref: () => {}, stdin: null,
+        resourceUsage: () => null,
+      } as any;
+    }) as any;
+    try {
+      const result = await callAcrExtraction("test");
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toContain("invalid JSON");
+      }
+    } finally {
+      Bun.spawn = originalSpawn;
+      (Bun as any).which = originalWhich;
+    }
+  });
+
+  test("ACR returns ok:false propagates error", async () => {
+    const restore = mockAcrCli({ ok: false, error: "Ollama unavailable" });
+    try {
+      const result = await callAcrExtraction("test");
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBe("Ollama unavailable");
+      }
+    } finally {
+      restore();
+    }
+  });
+
+  test("empty learnings is valid success response", async () => {
+    const restore = mockAcrCli({ ok: true, learnings: [] });
+    try {
+      const result = await callAcrExtraction("test");
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.learnings).toHaveLength(0);
+      }
+    } finally {
+      restore();
+    }
+  });
+
+  test("confidence passed to CLI arguments", async () => {
+    const restore = mockAcrCli({ ok: true, learnings: [] });
+    try {
+      await callAcrExtraction("test", { confidence: 0.5 });
+      // Verify Bun.spawn was called with correct args
+      expect(Bun.spawn).toHaveBeenCalled();
+      const args = (Bun.spawn as any).mock.calls[0][0];
+      expect(args).toContain("--confidence");
+      expect(args).toContain("0.5");
+    } finally {
+      restore();
+    }
+  });
+});
+
+// =============================================================================
+// F-017: extractionHook with ACR — T-2.1 / T-2.2 tests
+// =============================================================================
+
+describe("F-017: extractionHook with ACR", () => {
+  let testDir: string;
+  let seedPath: string;
+
+  // Mock helpers (same pattern as callAcrExtraction tests)
+  function mockAcrCli(output: object, exitCode = 0): () => void {
+    const originalSpawn = Bun.spawn;
+    const originalWhich = Bun.which;
+    const jsonOutput = JSON.stringify(output);
+
+    (Bun as any).which = mock(() => "/usr/local/bin/acr");
+    Bun.spawn = mock((...args: any[]) => {
+      // If this is a git command, delegate to real spawn
+      const cmdArgs = args[0];
+      if (Array.isArray(cmdArgs) && cmdArgs[0] === "git") {
+        return originalSpawn(...(args as [any, ...any[]]));
+      }
+      const encoder = new TextEncoder();
+      const data = encoder.encode(jsonOutput);
+      const stdout = new Response(new Blob([data])).body!;
+      const stderr = new Response(exitCode !== 0 ? "error" : "").body!;
+      return {
+        stdout,
+        stderr,
+        exited: Promise.resolve(exitCode),
+        pid: 99999,
+        exitCode: null,
+        signalCode: null,
+        killed: false,
+        kill: () => {},
+        ref: () => {},
+        unref: () => {},
+        stdin: null,
+        resourceUsage: () => null,
+      } as any;
+    }) as any;
+
+    return () => {
+      Bun.spawn = originalSpawn;
+      (Bun as any).which = originalWhich;
+    };
+  }
+
+  function mockAcrNotFound(): () => void {
+    const originalWhich = Bun.which;
+    (Bun as any).which = mock(() => null);
+    return () => {
+      (Bun as any).which = originalWhich;
+    };
+  }
+
+  beforeEach(async () => {
+    testDir = await mkdtemp(join(tmpdir(), "pai-seed-acr-hook-test-"));
+    seedPath = join(testDir, "seed.json");
+    await initTestGitRepo(testDir);
+    await writeSeedAndCommit(testDir);
+  });
+
+  afterEach(async () => {
+    await rm(testDir, { recursive: true, force: true });
+  });
+
+  test("ACR success path: proposals written with method 'acr'", async () => {
+    const restore = mockAcrCli({
+      ok: true,
+      learnings: [
+        { type: "pattern", content: "User prefers TypeScript", confidence: 0.85 },
+      ],
+    });
+    try {
+      const result = await extractionHook("test transcript", "test-session", seedPath);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.added).toBe(1);
+        expect(result.total).toBe(1);
+      }
+
+      // Verify proposal in seed has method "acr"
+      const loadResult = await loadSeed(seedPath);
+      expect(loadResult.ok).toBe(true);
+      if (loadResult.ok) {
+        const acr = loadResult.config.state.proposals.filter(
+          (p) => p.method === "acr",
+        );
+        expect(acr.length).toBe(1);
+        expect(acr[0].content).toBe("User prefers TypeScript");
+      }
+    } finally {
+      restore();
+    }
+  });
+
+  test("ACR failure falls back to regex extraction", async () => {
+    const restore = mockAcrNotFound();
+    try {
+      // Transcript with signal phrases that regex can detect
+      const transcript = "I noticed that Bun is faster than Node for tests.";
+      const result = await extractionHook(transcript, "test-session", seedPath);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.total).toBeGreaterThanOrEqual(1);
+      }
+
+      // Verify proposal has method "regex"
+      const loadResult = await loadSeed(seedPath);
+      expect(loadResult.ok).toBe(true);
+      if (loadResult.ok) {
+        const regex = loadResult.config.state.proposals.filter(
+          (p) => p.method === "regex",
+        );
+        expect(regex.length).toBeGreaterThanOrEqual(1);
+      }
+    } finally {
+      restore();
+    }
+  });
+
+  test("ACR returns empty learnings: no fallback, 0 proposals", async () => {
+    const restore = mockAcrCli({ ok: true, learnings: [] });
+    try {
+      // Transcript has signal phrases, but ACR ok:true with empty means no fallback
+      const transcript = "I noticed that patterns matter for extraction.";
+      const result = await extractionHook(transcript, "test-session", seedPath);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.added).toBe(0);
+        expect(result.total).toBe(0);
+      }
+    } finally {
+      restore();
+    }
+  });
+
+  test("ACR non-zero exit falls back to regex", async () => {
+    const restore = mockAcrCli({ ok: false, error: "timeout" }, 1);
+    try {
+      const transcript = "I noticed that timeouts should trigger fallback behavior.";
+      const result = await extractionHook(transcript, "test-session", seedPath);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        // Regex should have picked up "I noticed"
+        expect(result.total).toBeGreaterThanOrEqual(1);
+      }
+    } finally {
+      restore();
+    }
+  });
+
+  test("ACR multiple learnings: all converted to proposals", async () => {
+    const restore = mockAcrCli({
+      ok: true,
+      learnings: [
+        { type: "pattern", content: "Prefers Bun over Node", confidence: 0.9 },
+        { type: "insight", content: "SQLite scales well for single-node", confidence: 0.8 },
+        { type: "self_knowledge", content: "Morning focus sessions are productive", confidence: 0.75 },
+      ],
+    });
+    try {
+      const result = await extractionHook("transcript", "test-session", seedPath);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.total).toBe(3);
+        expect(result.added).toBe(3);
+      }
+    } finally {
+      restore();
+    }
+  });
+
+  test("ACR duplicate learnings deduplicated", async () => {
+    const restore = mockAcrCli({
+      ok: true,
+      learnings: [
+        { type: "pattern", content: "Prefers TypeScript", confidence: 0.9 },
+        { type: "pattern", content: "prefers typescript", confidence: 0.8 },
+      ],
+    });
+    try {
+      const result = await extractionHook("transcript", "test-session", seedPath);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.total).toBe(1); // Deduplicated
+      }
+    } finally {
+      restore();
+    }
+  });
+});
+
+// =============================================================================
+// F-017: Confidence threshold filtering
+// =============================================================================
+
+describe("F-017: confidence threshold filtering", () => {
+  let testDir: string;
+  let seedPath: string;
+
+  function mockAcrCli(output: object): () => void {
+    const originalSpawn = Bun.spawn;
+    const originalWhich = Bun.which;
+    const jsonOutput = JSON.stringify(output);
+
+    (Bun as any).which = mock(() => "/usr/local/bin/acr");
+    Bun.spawn = mock((...args: any[]) => {
+      const cmdArgs = args[0];
+      if (Array.isArray(cmdArgs) && cmdArgs[0] === "git") {
+        return originalSpawn(...(args as [any, ...any[]]));
+      }
+      const encoder = new TextEncoder();
+      const data = encoder.encode(jsonOutput);
+      const stdout = new Response(new Blob([data])).body!;
+      const stderr = new Response("").body!;
+      return {
+        stdout,
+        stderr,
+        exited: Promise.resolve(0),
+        pid: 99999,
+        exitCode: null,
+        signalCode: null,
+        killed: false,
+        kill: () => {},
+        ref: () => {},
+        unref: () => {},
+        stdin: null,
+        resourceUsage: () => null,
+      } as any;
+    }) as any;
+
+    return () => {
+      Bun.spawn = originalSpawn;
+      (Bun as any).which = originalWhich;
+    };
+  }
+
+  beforeEach(async () => {
+    testDir = await mkdtemp(join(tmpdir(), "pai-seed-conf-test-"));
+    seedPath = join(testDir, "seed.json");
+    await initTestGitRepo(testDir);
+    await writeSeedAndCommit(testDir);
+    // Clear any custom threshold from env
+    delete process.env.PAI_EXTRACTION_CONFIDENCE;
+  });
+
+  afterEach(async () => {
+    delete process.env.PAI_EXTRACTION_CONFIDENCE;
+    await rm(testDir, { recursive: true, force: true });
+  });
+
+  test("learnings below default 0.7 threshold are excluded", async () => {
+    const restore = mockAcrCli({
+      ok: true,
+      learnings: [
+        { type: "pattern", content: "High confidence learning", confidence: 0.85 },
+        { type: "insight", content: "Low confidence learning", confidence: 0.5 },
+        { type: "pattern", content: "Boundary confidence learning", confidence: 0.7 },
+      ],
+    });
+    try {
+      const result = await extractionHook("transcript", "test-session", seedPath);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        // 0.85 passes, 0.5 excluded, 0.7 passes (>= threshold)
+        expect(result.total).toBe(2);
+      }
+    } finally {
+      restore();
+    }
+  });
+
+  test("all learnings filtered below threshold returns empty, no fallback", async () => {
+    const restore = mockAcrCli({
+      ok: true,
+      learnings: [
+        { type: "pattern", content: "Below threshold", confidence: 0.3 },
+        { type: "insight", content: "Also below threshold", confidence: 0.5 },
+      ],
+    });
+    try {
+      // Even though transcript has signal phrases, ACR ok:true means no regex fallback
+      const transcript = "I noticed something but ACR confidence is low.";
+      const result = await extractionHook(transcript, "test-session", seedPath);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.added).toBe(0);
+        expect(result.total).toBe(0);
+      }
+    } finally {
+      restore();
+    }
+  });
+
+  test("custom threshold via PAI_EXTRACTION_CONFIDENCE env var", async () => {
+    process.env.PAI_EXTRACTION_CONFIDENCE = "0.9";
+    const restore = mockAcrCli({
+      ok: true,
+      learnings: [
+        { type: "pattern", content: "Very high confidence", confidence: 0.95 },
+        { type: "insight", content: "Medium confidence", confidence: 0.85 },
+        { type: "pattern", content: "Just below custom threshold", confidence: 0.89 },
+      ],
+    });
+    try {
+      const result = await extractionHook("transcript", "test-session", seedPath);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        // Only 0.95 passes at 0.9 threshold
+        expect(result.total).toBe(1);
+      }
+    } finally {
+      restore();
+    }
+  });
+
+  test("threshold 0.0 includes all learnings", async () => {
+    process.env.PAI_EXTRACTION_CONFIDENCE = "0.0";
+    const restore = mockAcrCli({
+      ok: true,
+      learnings: [
+        { type: "pattern", content: "Zero confidence learning", confidence: 0.01 },
+        { type: "insight", content: "Another low confidence", confidence: 0.1 },
+      ],
+    });
+    try {
+      const result = await extractionHook("transcript", "test-session", seedPath);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.total).toBe(2);
+      }
+    } finally {
+      restore();
+    }
   });
 });

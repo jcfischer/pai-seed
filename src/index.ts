@@ -111,6 +111,16 @@ export {
 } from "./extraction";
 
 // =============================================================================
+// F-017: ACR semantic extraction
+// =============================================================================
+
+// Types
+export type { AcrExtractionResult, AcrExtractionOptions } from "./extraction";
+
+// Functions
+export { callAcrExtraction } from "./extraction";
+
+// =============================================================================
 // F-008: Event log foundation
 // =============================================================================
 
