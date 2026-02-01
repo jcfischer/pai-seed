@@ -12,6 +12,8 @@ import {
   writeProposals,
   extractionHook,
   callAcrExtraction,
+  stripStructuredContent,
+  MAX_PROPOSAL_CONTENT_LENGTH,
 } from "../src/extraction";
 
 // =============================================================================
@@ -843,16 +845,16 @@ describe("F-017: extractionHook with ACR", () => {
     }
   });
 
-  test("ACR returns empty learnings: falls back to regex", async () => {
+  test("ACR returns empty learnings: accepts silence (no regex fallback)", async () => {
     const restore = mockAcrCli({ ok: true, learnings: [] });
     try {
-      // ACR returned ok:true but empty — should fall back to regex
+      // ACR returned ok:true but empty — accept silence, no regex fallback
       const transcript = "I noticed that patterns matter for extraction.";
       const result = await extractionHook(transcript, "test-session", seedPath);
       expect(result.ok).toBe(true);
       if (result.ok) {
-        // Regex picks up "I noticed"
-        expect(result.total).toBeGreaterThanOrEqual(1);
+        expect(result.added).toBe(0);
+        expect(result.total).toBe(0);
       }
     } finally {
       restore();
@@ -995,7 +997,7 @@ describe("F-017: confidence threshold filtering", () => {
     }
   });
 
-  test("all learnings filtered below threshold: falls back to regex", async () => {
+  test("all learnings filtered below threshold: accepts silence", async () => {
     const restore = mockAcrCli({
       ok: true,
       learnings: [
@@ -1004,13 +1006,13 @@ describe("F-017: confidence threshold filtering", () => {
       ],
     });
     try {
-      // ACR returned learnings but all below threshold — should fall back to regex
+      // ACR returned learnings but all below threshold — accept silence, no regex fallback
       const transcript = "I noticed something but ACR confidence is low.";
       const result = await extractionHook(transcript, "test-session", seedPath);
       expect(result.ok).toBe(true);
       if (result.ok) {
-        // Regex picks up "I noticed"
-        expect(result.total).toBeGreaterThanOrEqual(1);
+        expect(result.added).toBe(0);
+        expect(result.total).toBe(0);
       }
     } finally {
       restore();
@@ -1057,5 +1059,134 @@ describe("F-017: confidence threshold filtering", () => {
     } finally {
       restore();
     }
+  });
+});
+
+// =============================================================================
+// F-019: stripStructuredContent — Pre-filter tests
+// =============================================================================
+
+describe("stripStructuredContent", () => {
+  test("strips fenced code blocks, preserves surrounding prose", () => {
+    const text = `The user said something important.
+\`\`\`typescript
+const x = 1;
+const y = 2;
+\`\`\`
+Then they continued talking about preferences.`;
+    const result = stripStructuredContent(text);
+    expect(result).toContain("The user said something important.");
+    expect(result).toContain("Then they continued talking about preferences.");
+    expect(result).not.toContain("const x = 1");
+    expect(result).toContain("[...]");
+  });
+
+  test("strips line-numbered content", () => {
+    const text = `Some prose before.
+  123→ const x = 1;
+  124→ const y = 2;
+  125→ return x + y;
+Some prose after.`;
+    const result = stripStructuredContent(text);
+    expect(result).toContain("Some prose before.");
+    expect(result).toContain("Some prose after.");
+    expect(result).not.toContain("const x = 1");
+    expect(result).not.toContain("123→");
+  });
+
+  test("strips tool use XML blocks", () => {
+    const toolBlock = '<invoke name="Read"><param>test</param></invoke>';
+    const text = "The assistant noticed something.\n" + toolBlock + "\nThen continued.";
+    const result = stripStructuredContent(text);
+    expect(result).toContain("The assistant noticed something.");
+    expect(result).toContain("Then continued.");
+    expect(result).not.toContain("antml:invoke");
+  });
+
+  test("strips large JSON objects (>200 chars), preserves small ones", () => {
+    const smallJson = '{"ok": true, "count": 5}';
+    const largeJson = '{"data": ' + JSON.stringify({ items: Array(20).fill({ id: "x".repeat(10), value: 999 }) }) + '}';
+    expect(largeJson.length).toBeGreaterThan(200);
+
+    const text = `Small JSON: ${smallJson}\nLarge JSON: ${largeJson}\nEnd.`;
+    const result = stripStructuredContent(text);
+    expect(result).toContain(smallJson);
+    expect(result).not.toContain('"x".repeat');
+    expect(result).toContain("End.");
+  });
+
+  test("returns original text when no structured content present", () => {
+    const text = "This is just normal prose about preferences and learnings.";
+    const result = stripStructuredContent(text);
+    expect(result).toBe(text);
+  });
+
+  test("preserves signal phrases in prose around stripped code blocks", () => {
+    const text = `You prefer TypeScript over Python.
+\`\`\`
+const x = "you prefer";
+\`\`\`
+I learned that testing saves time.`;
+    const result = stripStructuredContent(text);
+    expect(result).toContain("You prefer TypeScript over Python.");
+    expect(result).toContain("I learned that testing saves time.");
+    // Code content removed
+    expect(result).not.toContain('const x = "you prefer"');
+  });
+
+  test("collapses 3+ newlines to 2", () => {
+    const text = "First paragraph.\n\n\n\n\nSecond paragraph.";
+    const result = stripStructuredContent(text);
+    expect(result).toBe("First paragraph.\n\nSecond paragraph.");
+  });
+
+  test("handles pipe-style line numbers", () => {
+    const text = "Before.\n  42| function foo() {\n  43| return 1;\nAfter.";
+    const result = stripStructuredContent(text);
+    expect(result).toContain("Before.");
+    expect(result).toContain("After.");
+    expect(result).not.toContain("function foo");
+  });
+});
+
+// =============================================================================
+// F-019: truncateContent — Content length cap tests
+// =============================================================================
+
+describe("truncateContent via extractProposals", () => {
+  test("content at exactly 200 chars is unchanged", () => {
+    const content = "You prefer " + "x".repeat(189);
+    expect(content.length).toBe(200);
+    const proposals = extractProposals(content, "test");
+    expect(proposals.length).toBeGreaterThanOrEqual(1);
+    expect(proposals[0].content.length).toBe(200);
+    expect(proposals[0].content).not.toContain("...");
+  });
+
+  test("content at 201 chars is truncated to 203 (200 + '...')", () => {
+    const content = "You prefer " + "x".repeat(190);
+    expect(content.length).toBe(201);
+    const proposals = extractProposals(content, "test");
+    expect(proposals.length).toBeGreaterThanOrEqual(1);
+    expect(proposals[0].content.length).toBe(203);
+    expect(proposals[0].content).toEndWith("...");
+  });
+
+  test("short content is unchanged", () => {
+    const content = "You prefer TypeScript.";
+    const proposals = extractProposals(content, "test");
+    expect(proposals.length).toBeGreaterThanOrEqual(1);
+    expect(proposals[0].content).not.toContain("...");
+  });
+
+  test("very long content is truncated to 203 total", () => {
+    const content = "You prefer " + "x".repeat(500);
+    const proposals = extractProposals(content, "test");
+    expect(proposals.length).toBeGreaterThanOrEqual(1);
+    expect(proposals[0].content.length).toBe(203);
+  });
+
+  test("MAX_PROPOSAL_CONTENT_LENGTH is exported and equals 200", () => {
+    expect(MAX_PROPOSAL_CONTENT_LENGTH).toBe(200);
   });
 });

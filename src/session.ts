@@ -105,8 +105,11 @@ export function formatLearningSummary(learned: LearnedLayer): string {
 /**
  * Format pending proposals into a numbered list.
  * Returns "" when there are no pending proposals.
+ * Shows top 5 by recency with footer for remaining.
  * Pure function, no I/O.
  */
+const MAX_SURFACED_PROPOSALS = 5;
+
 export function formatProposals(proposals: Proposal[]): string {
   const pending = proposals.filter((p) => p.status === "pending");
 
@@ -114,11 +117,26 @@ export function formatProposals(proposals: Proposal[]): string {
     return "";
   }
 
+  // Sort by recency (most recent first)
+  const sorted = [...pending].sort(
+    (a, b) =>
+      new Date(b.extractedAt).getTime() - new Date(a.extractedAt).getTime(),
+  );
+
+  const shown = sorted.slice(0, MAX_SURFACED_PROPOSALS);
+  const remaining = pending.length - shown.length;
+
   const lines: string[] = [`Pending proposals (${pending.length}):`];
 
-  for (let i = 0; i < pending.length; i++) {
-    const p = pending[i];
+  for (let i = 0; i < shown.length; i++) {
+    const p = shown[i];
     lines.push(`  ${i + 1}. [${p.type}] "${p.content}" (from ${p.source})`);
+  }
+
+  if (remaining > 0) {
+    lines.push(
+      `\n  ... and ${remaining} more pending. Run \`pai-seed proposals review\` to manage.`,
+    );
   }
 
   return lines.join("\n");

@@ -47,6 +47,17 @@ export type AcrExtractionOptions = {
 };
 
 // =============================================================================
+// F-019: Content truncation
+// =============================================================================
+
+export const MAX_PROPOSAL_CONTENT_LENGTH = 200;
+
+function truncateContent(content: string): string {
+  if (content.length <= MAX_PROPOSAL_CONTENT_LENGTH) return content;
+  return content.slice(0, MAX_PROPOSAL_CONTENT_LENGTH) + "...";
+}
+
+// =============================================================================
 // F-006: Signal Phrases
 // =============================================================================
 
@@ -162,7 +173,7 @@ export function extractProposals(
     proposals.push({
       id: nanoid(),
       type: signal.type,
-      content: signal.content,
+      content: truncateContent(signal.content),
       source,
       extractedAt: now,
       status: "pending",
@@ -262,7 +273,7 @@ function acrLearningsToProposals(
     .map((l) => ({
       id: nanoid(),
       type: l.type,
-      content: l.content,
+      content: truncateContent(l.content),
       source,
       extractedAt: now,
       status: "pending" as const,
@@ -271,17 +282,47 @@ function acrLearningsToProposals(
 }
 
 // =============================================================================
+// F-019: stripStructuredContent — Pre-filter transcript
+// =============================================================================
+
+const FENCED_CODE_BLOCK = /^```[\s\S]*?^```/gm;
+const LINE_NUMBER_PREFIX = /^\s*\d+[→│|]\s*.*$/gm;
+const TOOL_BLOCKS =
+  /<(?:antml:invoke|tool_result|function_results)[\s\S]*?<\/(?:antml:invoke|tool_result|function_results)>/g;
+const MULTILINE_JSON = /\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g;
+
+/**
+ * Strip structured data regions from transcript text.
+ * Replaces code blocks, tool output, and large JSON with [...] placeholders.
+ * Removes line-number prefixed lines entirely.
+ * Collapses 3+ consecutive newlines to 2.
+ */
+export function stripStructuredContent(text: string): string {
+  let cleaned = text;
+  cleaned = cleaned.replace(FENCED_CODE_BLOCK, " [...] ");
+  cleaned = cleaned.replace(LINE_NUMBER_PREFIX, "");
+  cleaned = cleaned.replace(TOOL_BLOCKS, " [...] ");
+  cleaned = cleaned.replace(MULTILINE_JSON, (match) =>
+    match.length > 200 ? " [...] " : match,
+  );
+  cleaned = cleaned.replace(/\n{3,}/g, "\n\n");
+  return cleaned;
+}
+
+// =============================================================================
 // F-006/F-017: extractionHook — I/O orchestrator (ACR-first with regex fallback)
 // =============================================================================
 
 /**
- * End-to-end extraction hook: try ACR semantic extraction first, fall back to regex.
+ * End-to-end extraction hook: pre-filter transcript, try ACR, regex only on ACR failure.
  *
  * Strategy:
- * - Try ACR first via callAcrExtraction()
- * - If ACR returns ok:true, use its results (even if empty — no regex fallback)
- * - Apply confidence threshold filtering (PAI_EXTRACTION_CONFIDENCE env, default 0.7)
- * - If ACR returns ok:false (binary not found, timeout, error), fall back to regex
+ * - Pre-filter transcript via stripStructuredContent() (removes code blocks, JSON, tool output)
+ * - Try ACR first via callAcrExtraction() on cleaned transcript
+ * - If ACR returns ok:true with learnings above threshold, use them
+ * - If ACR returns ok:true with 0 learnings above threshold, accept silence (no fallback)
+ * - If ACR returns ok:false (binary not found, timeout, error), fall back to regex on cleaned text
+ * - All proposal content truncated to 200 chars
  * - Write proposals to seed, never throws
  */
 export async function extractionHook(
@@ -292,8 +333,11 @@ export async function extractionHook(
   try {
     let proposals: Proposal[];
 
+    // Pre-filter transcript: strip code blocks, JSON, tool output
+    const cleaned = stripStructuredContent(transcript);
+
     // Try ACR semantic extraction first
-    const acrResult = await callAcrExtraction(transcript);
+    const acrResult = await callAcrExtraction(cleaned);
 
     if (acrResult.ok) {
       // ACR succeeded — apply confidence filtering
@@ -308,15 +352,12 @@ export async function extractionHook(
         // ACR found high-confidence learnings — use them
         proposals = acrLearningsToProposals(filtered, sessionId);
       } else {
-        // ACR returned nothing above threshold — fall back to regex
-        proposals = extractProposals(transcript, sessionId);
-        for (const p of proposals) {
-          p.method = "regex";
-        }
+        // ACR succeeded but found nothing above threshold — accept silence
+        proposals = [];
       }
     } else {
-      // ACR unavailable — fall back to regex extraction
-      proposals = extractProposals(transcript, sessionId);
+      // ACR unavailable — regex on pre-filtered transcript
+      proposals = extractProposals(cleaned, sessionId);
       for (const p of proposals) {
         p.method = "regex";
       }

@@ -264,6 +264,93 @@ describe("formatProposals", () => {
     expect(result).toContain("Pending proposals (1)");
     expect(result).toContain('1. [pattern] "Single proposal content" (from test-session)');
   });
+
+  // F-019: Cap at 5 with recency sort
+  test("3 proposals: all shown, no footer", () => {
+    const proposals = Array.from({ length: 3 }, (_, i) =>
+      makeProposal(`Proposal ${i + 1}`, "pending"),
+    );
+    const result = formatProposals(proposals);
+    expect(result).toContain("Pending proposals (3)");
+    expect(result).toContain("Proposal 1");
+    expect(result).toContain("Proposal 3");
+    expect(result).not.toContain("more pending");
+  });
+
+  test("5 proposals: all shown, no footer", () => {
+    const proposals = Array.from({ length: 5 }, (_, i) =>
+      makeProposal(`Proposal ${i + 1}`, "pending"),
+    );
+    const result = formatProposals(proposals);
+    expect(result).toContain("Pending proposals (5)");
+    expect(result).not.toContain("more pending");
+  });
+
+  test("6 proposals: 5 shown + footer", () => {
+    const proposals = Array.from({ length: 6 }, (_, i) =>
+      makeProposal(`Proposal ${i + 1}`, "pending"),
+    );
+    const result = formatProposals(proposals);
+    expect(result).toContain("Pending proposals (6)");
+    expect(result).toContain("... and 1 more pending");
+    expect(result).toContain("pai-seed proposals review");
+    // Count numbered items (lines starting with digits after spaces)
+    const numbered = result.split("\n").filter((l) => /^\s+\d+\./.test(l));
+    expect(numbered.length).toBe(5);
+  });
+
+  test("48 proposals: 5 shown + footer with 43 remaining", () => {
+    const proposals = Array.from({ length: 48 }, (_, i) =>
+      makeProposal(`Proposal ${i + 1}`, "pending"),
+    );
+    const result = formatProposals(proposals);
+    expect(result).toContain("Pending proposals (48)");
+    expect(result).toContain("... and 43 more pending");
+    expect(result).toContain("pai-seed proposals review");
+  });
+
+  test("proposals sorted by recency (most recent first)", () => {
+    const proposals: Proposal[] = [
+      {
+        id: "old",
+        type: "pattern",
+        content: "Old proposal",
+        source: "old-session",
+        extractedAt: "2026-01-01T00:00:00.000Z",
+        status: "pending",
+      },
+      {
+        id: "new",
+        type: "insight",
+        content: "New proposal",
+        source: "new-session",
+        extractedAt: "2026-02-01T00:00:00.000Z",
+        status: "pending",
+      },
+      {
+        id: "mid",
+        type: "self_knowledge",
+        content: "Mid proposal",
+        source: "mid-session",
+        extractedAt: "2026-01-15T00:00:00.000Z",
+        status: "pending",
+      },
+    ];
+    const result = formatProposals(proposals);
+    const lines = result.split("\n").filter((l) => /^\s+\d+\./.test(l));
+    // Most recent first
+    expect(lines[0]).toContain("New proposal");
+    expect(lines[1]).toContain("Mid proposal");
+    expect(lines[2]).toContain("Old proposal");
+  });
+
+  test("header shows total count not shown count", () => {
+    const proposals = Array.from({ length: 10 }, (_, i) =>
+      makeProposal(`P${i}`, "pending"),
+    );
+    const result = formatProposals(proposals);
+    expect(result).toContain("Pending proposals (10):");
+  });
 });
 
 // =============================================================================
