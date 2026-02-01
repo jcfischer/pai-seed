@@ -1,17 +1,35 @@
 # pai-seed
 
-Typed seed file management for PAI (Personal AI Infrastructure). Provides schema validation, git-backed persistence, first-run setup, and session context generation for `seed.json` — the file that stores an AI assistant's identity, learned patterns, and operational state.
+Typed seed file management for PAI (Personal AI Infrastructure). Provides schema validation, git-backed persistence, session hooks, event logging, and learning lifecycle management for `seed.json` — the file that stores an AI assistant's identity, learned patterns, and operational state.
+
+**510 tests | 16 features | 0 failures**
 
 ## Architecture
 
-pai-seed is built as layered modules, each depending on the one below:
-
 ```
-F-005  Session Context    ← formats seed data for hook injection
-F-004  Setup Wizard       ← first-run identity configuration
-F-003  Git Persistence    ← auto-commit, repair from history
-F-002  Loader             ← read/write with defaults merging
-F-001  Schema             ← Zod types, validation, JSON Schema
+Layer 4: Intelligence
+  F-015  Freshness        ← learning decay detection, review prompts
+  F-012  ACR Integration  ← export learnings/events for semantic search
+  F-006  Extraction       ← detect learning signals from sessions
+  F-007  Confirmation     ← accept/reject proposed learnings
+
+Layer 3: Lifecycle
+  F-009  Compaction       ← archive old event logs with summaries
+  F-010  Checkpoints      ← snapshot seed state for recovery
+  F-016  Redaction        ← append-only event redaction with audit trail
+  F-013  Relationships    ← separate person files linked from seed
+  F-014  Migration        ← version-aware schema migration on load
+
+Layer 2: Infrastructure
+  F-008  Event Log        ← append-only JSONL event recording
+  F-005  Session Hook     ← format seed data for hook injection
+  F-004  Setup Wizard     ← first-run identity configuration
+  F-011  CLI              ← command-line interface for all operations
+
+Layer 1: Foundation
+  F-003  Git Persistence  ← auto-commit, repair from history
+  F-002  Loader           ← read/write with defaults merging, migration
+  F-001  Schema           ← Zod types, validation, JSON Schema
 ```
 
 ### seed.json Structure
@@ -45,7 +63,7 @@ F-001  Schema             ← Zod types, validation, JSON Schema
 ## Requirements
 
 - [Bun](https://bun.sh) >= 1.0
-- Git (for F-003 persistence)
+- Git (for persistence layer)
 
 ## Install
 
@@ -58,10 +76,11 @@ bun install
 ```typescript
 import {
   loadSeedWithGit,
-  isFirstRun,
-  runSetup,
   sessionStartHook,
-  generateSessionContext,
+  extractionHook,
+  logEvent,
+  getStaleLearnings,
+  exportAllForACR,
 } from "pai-seed";
 
 // Load seed with git integration (auto-creates, auto-repairs)
@@ -70,116 +89,184 @@ if (result.ok) {
   console.log(result.config.identity.aiName);
 }
 
-// Check if first-run setup is needed
-if (await isFirstRun()) {
-  const setup = await runSetup({ principalName: "Daniel" });
-}
-
-// Generate session context for hook injection
-const ctx = await generateSessionContext();
-if (ctx.ok) {
-  console.log(ctx.context);      // formatted text
-  console.log(ctx.proposalCount); // pending proposals count
-}
-
-// Hook entry point (thin wrapper, never throws)
+// Session start — inject context into AI prompt
 const output = await sessionStartHook();
-console.log(output);
+
+// Post-session — extract learning signals
+const extraction = await extractionHook(transcript, seedPath);
+
+// Log events
+await logEvent("session_start", { action: "begin" });
+
+// Check learning freshness
+const stale = getStaleLearnings(result.config);
+
+// Export for ACR semantic search
+const acr = await exportAllForACR();
+```
+
+## CLI
+
+```bash
+pai-seed show                      # Seed summary
+pai-seed status                    # Health check
+pai-seed diff                      # Git diff
+pai-seed learn <type> <content>    # Add learning
+pai-seed forget <id>               # Remove learning
+pai-seed stale                     # List stale learnings
+pai-seed refresh <id>              # Re-confirm learning
+pai-seed rel list                  # List relationships
+pai-seed rel add <name> [context]  # Add relationship
+pai-seed rel show <name>           # Show relationship
+pai-seed rel moment <name> <desc>  # Add key moment
+pai-seed redact <id> [reason]      # Redact event
+pai-seed repair                    # Auto-repair from git
 ```
 
 ## API
 
 ### F-001: Schema & Validation
 
-| Export | Type | Description |
-|--------|------|-------------|
-| `seedConfigSchema` | Zod schema | Root schema for seed.json |
-| `validateSeed(data)` | Function | Validate data against schema, returns `ValidationResult` |
-| `createDefaultSeed()` | Function | Create a new SeedConfig with sensible defaults |
-| `generateJsonSchema()` | Function | Generate JSON Schema from Zod schema |
-| `SeedConfig` | Type | Root config type |
-| `IdentityLayer` | Type | Identity section |
-| `LearnedLayer` | Type | Learned patterns/insights |
-| `StateLayer` | Type | Operational state |
-| `Learning` | Type | Single learned item |
-| `Proposal` | Type | Pending learning candidate |
+| Export | Description |
+|--------|-------------|
+| `seedConfigSchema` | Root Zod schema |
+| `validateSeed(data)` | Validate against schema |
+| `createDefaultSeed()` | New SeedConfig with defaults |
+| `generateJsonSchema()` | Generate JSON Schema |
+| `SeedConfig`, `Learning`, `Proposal` | Core types |
 
 ### F-002: Loader
 
-| Export | Type | Description |
-|--------|------|-------------|
-| `loadSeed(path?)` | Function | Load seed.json, create if missing, merge defaults |
-| `writeSeed(config, path?)` | Function | Atomic write with validation |
-| `resolveSeedPath(path?)` | Function | Resolve to `~/.pai/seed.json` or custom path |
-| `LoadResult` | Type | Discriminated union: `{ ok, config, created, merged }` or `{ ok: false, error }` |
-| `WriteResult` | Type | `{ ok: true }` or `{ ok: false, error }` |
+| Export | Description |
+|--------|-------------|
+| `loadSeed(path?)` | Load, create if missing, merge defaults |
+| `writeSeed(config, path?)` | Atomic write with validation |
+| `resolveSeedPath(path?)` | Default `~/.pai/seed.json` |
 
 ### F-003: Git Persistence
 
-| Export | Type | Description |
-|--------|------|-------------|
-| `loadSeedWithGit(path?)` | Function | Load with auto-init, auto-commit, auto-repair |
-| `writeSeedWithCommit(config, message, path?)` | Function | Write + git commit |
-| `initGitRepo(dir?)` | Function | Initialize git repo in `~/.pai/` |
-| `repairFromGit(path?, dir?)` | Function | Recover from corruption via git history |
-| `commitSeedChange(message, dir?)` | Function | Stage and commit seed files |
-| `isGitRepo(dir?)` | Function | Check if directory is a git repo |
-| `getLastCommitMessage(dir?)` | Function | Get most recent commit message |
-| `hasUncommittedChanges(dir?)` | Function | Check for uncommitted changes |
+| Export | Description |
+|--------|-------------|
+| `loadSeedWithGit(path?)` | Load + auto-init + auto-commit + repair |
+| `writeSeedWithCommit(config, msg, path?)` | Write + git commit |
+| `repairFromGit(path?)` | Recover from corruption |
+| `initGitRepo(dir?)` | Initialize git in `~/.pai/` |
 
 ### F-004: Setup Wizard
 
-| Export | Type | Description |
-|--------|------|-------------|
-| `runSetup(answers, path?)` | Function | Run first-run setup, idempotent |
-| `isFirstRun(path?)` | Function | Check if setup is needed |
-| `buildSeedFromAnswers(answers)` | Function | Pure: build SeedConfig from wizard answers |
-| `detectTimezone()` | Function | Detect system timezone via Intl API |
-| `setupAnswersSchema` | Zod schema | Validation for setup wizard answers |
-| `SetupAnswers` | Type | Setup wizard input |
-| `SetupResult` | Type | `{ ok, config, created }` or `{ ok: false, error }` |
+| Export | Description |
+|--------|-------------|
+| `runSetup(answers, path?)` | First-run setup, idempotent |
+| `isFirstRun(path?)` | Check if setup needed |
+| `buildSeedFromAnswers(answers)` | Pure: answers to SeedConfig |
 
 ### F-005: Session Context
 
-| Export | Type | Description |
-|--------|------|-------------|
-| `generateSessionContext(path?, options?)` | Function | Generate formatted context from seed |
-| `sessionStartHook(path?, options?)` | Function | Hook entry point, never throws |
-| `formatIdentitySummary(identity)` | Function | Pure: identity text |
-| `formatLearningSummary(learned)` | Function | Pure: learning counts + items |
-| `formatProposals(proposals)` | Function | Pure: numbered pending proposals |
-| `formatSessionState(state)` | Function | Pure: session state text |
-| `SessionContext` | Type | Context generation result |
-| `ContextMode` | Type | `"full"` or `"complement"` |
+| Export | Description |
+|--------|-------------|
+| `sessionStartHook(path?)` | Hook entry point, never throws |
+| `generateSessionContext(path?, opts?)` | Full context generation |
+| `formatIdentitySummary(identity)` | Pure formatter |
 
-**Context modes:** `"full"` includes identity (standalone use). `"complement"` skips identity (when PAI system already injects it). Auto-detected via `PAI_DIR` env var.
+### F-006: Post-Session Extraction
+
+| Export | Description |
+|--------|-------------|
+| `extractionHook(transcript, path?)` | Hook entry point |
+| `detectLearningSignals(text)` | Find learning patterns in text |
+| `extractProposals(signals)` | Convert signals to proposals |
+
+### F-007: Proposal Confirmation
+
+| Export | Description |
+|--------|-------------|
+| `acceptProposal(id, path?)` | Accept → learning |
+| `rejectProposal(id, path?)` | Reject proposal |
+| `getPendingProposals(path?)` | List pending proposals |
+| `acceptAllProposals(path?)` | Bulk accept |
+
+### F-008: Event Log
+
+| Export | Description |
+|--------|-------------|
+| `logEvent(type, data, sessionId?, dir?)` | Convenience event logger |
+| `readEvents(options?)` | Read with filters (type, date, session) |
+| `appendEvent(event, dir?)` | Low-level append |
+| `countEvents(options?)` | Count by type |
+
+### F-009: Event Compaction
+
+| Export | Description |
+|--------|-------------|
+| `compactEvents(options?)` | Archive old events with summaries |
+| `generatePeriodSummary(events)` | Generate statistical summary |
+| `findEligiblePeriods(options?)` | Find periods ready for compaction |
+
+### F-010: Checkpoint System
+
+| Export | Description |
+|--------|-------------|
+| `createCheckpoint(options?)` | Snapshot seed + events state |
+| `loadCheckpoint(id, dir?)` | Restore checkpoint |
+| `listCheckpoints(dir?)` | List all checkpoints |
+| `detectIncompleteCheckpoint(dir?)` | Find interrupted checkpoints |
+
+### F-011: CLI
+
+Binary: `pai-seed` (via `src/cli.ts`). Exported `main(argv?)` function for programmatic use.
+
+### F-012: ACR Integration
+
+| Export | Description |
+|--------|-------------|
+| `exportAllForACR(options?)` | Combined learnings + events export |
+| `exportLearnings(options?)` | Learnings as ACR documents |
+| `exportEventSummaries(options?)` | Events grouped by day |
+
+### F-013: Relationship File System
+
+| Export | Description |
+|--------|-------------|
+| `addRelationship(name, ctx?, opts?)` | Create relationship file |
+| `loadRelationship(name, opts?)` | Read relationship |
+| `listRelationships(opts?)` | List all relationship slugs |
+| `addKeyMoment(name, desc, tags?, opts?)` | Append key moment |
+| `removeRelationship(name, opts?)` | Delete relationship |
+
+### F-014: Schema Migration
+
+| Export | Description |
+|--------|-------------|
+| `migrateSeed(config, options?)` | Run migration chain |
+| `needsMigration(config)` | Check if migration needed |
+| `registerMigration(from, to, fn)` | Register migration function |
+
+### F-015: Learning Freshness
+
+| Export | Description |
+|--------|-------------|
+| `isStale(learning, days?)` | Boolean staleness check |
+| `getStaleLearnings(seed, days?)` | All stale learnings |
+| `freshnessScore(learning, days?)` | 0.0-1.0 linear score |
+| `reconfirmLearning(id, path?)` | Update confirmedAt |
+| `generateReviewPrompt(seed, days?)` | Review prompt or null |
+
+### F-016: Redaction
+
+| Export | Description |
+|--------|-------------|
+| `redactEvent(id, reason?, opts?)` | Append redaction marker |
+| `isRedacted(id, opts?)` | Check if event redacted |
+| `getRedactedIds(opts?)` | Set of all redacted IDs |
 
 ## Development
 
 ```bash
-bun test              # run all tests (210)
+bun test              # 510 tests across 20 files
 bun run typecheck     # tsc --noEmit
 ```
 
-All tests use temp directories and never touch `~/.pai/`. All formatter functions are pure (no I/O).
-
-## Roadmap
-
-5 of 16 features implemented. Remaining:
-
-| ID | Feature | Dependencies |
-|----|---------|-------------|
-| F-006 | Post-session extraction hook | F-002 |
-| F-007 | Proposal confirmation flow | F-005, F-006 |
-| F-008 | Event log foundation | F-002 |
-| F-009 | Event log compaction | F-008 |
-| F-010 | Checkpoint system | F-008 |
-| F-011 | Seed CLI commands | F-002, F-003 |
-| F-012 | ACR integration | F-002, F-008 |
-| F-013 | Relationship file system | F-002, F-003 |
-| F-014 | Schema migration system | F-001, F-002 |
-| F-015 | Learning decay and freshness | F-002, F-007 |
-| F-016 | Redaction support | F-008 |
+All tests use temp directories and never touch `~/.pai/`.
 
 ## License
 
