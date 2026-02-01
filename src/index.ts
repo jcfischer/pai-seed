@@ -276,3 +276,20 @@ export { redactionDataSchema } from "./redaction";
 
 // Functions
 export { getRedactedIds, isRedacted, redactEvent } from "./redaction";
+
+// =============================================================================
+// F-015: Learning decay and freshness
+// =============================================================================
+
+// Types
+export type { StaleLearning, FreshnessStats, ReconfirmResult } from "./freshness";
+
+// Functions
+export {
+  isStale,
+  getStaleLearnings,
+  getFreshnessStats,
+  freshnessScore,
+  reconfirmLearning,
+  generateReviewPrompt,
+} from "./freshness";

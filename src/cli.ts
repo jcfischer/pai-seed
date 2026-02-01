@@ -13,6 +13,7 @@ import {
   addKeyMoment,
 } from "./relationships";
 import { redactEvent } from "./redaction";
+import { getStaleLearnings, reconfirmLearning } from "./freshness";
 
 // =============================================================================
 // F-011: ANSI Helpers
@@ -405,6 +406,54 @@ ${ansi.bold("Subcommands:")}
 }
 
 // =============================================================================
+// F-015: Stale and Refresh Commands
+// =============================================================================
+
+async function cmdStale(seedPath?: string): Promise<number> {
+  const result = await loadSeed(seedPath);
+  if (!result.ok) {
+    console.error(ansi.red(`Error: ${result.error.message}`));
+    return 1;
+  }
+
+  const stale = getStaleLearnings(result.config);
+  if (stale.length === 0) {
+    console.log(ansi.green("No stale learnings. All learnings are fresh."));
+    return 0;
+  }
+
+  console.log(ansi.bold(`${stale.length} stale learning${stale.length === 1 ? "" : "s"}:`));
+  console.log();
+  for (const item of stale) {
+    const label = item.category === "selfKnowledge" ? "self_knowledge" : item.category;
+    console.log(`  ${ansi.yellow(`[${label}]`)} ${item.learning.content}`);
+    console.log(`    ${ansi.dim(`ID: ${item.learning.id} | ${item.daysSinceConfirmed}d since confirmed`)}`);
+  }
+  console.log();
+  console.log(ansi.dim('Use "pai-seed refresh <id>" to re-confirm or "pai-seed forget <id>" to remove.'));
+  return 0;
+}
+
+async function cmdRefresh(args: string[], seedPath?: string): Promise<number> {
+  if (args.length < 1) {
+    console.error(ansi.red("Usage: pai-seed refresh <id>"));
+    return 1;
+  }
+
+  const id = args[0];
+  const result = await reconfirmLearning(id, seedPath);
+
+  if (!result.ok) {
+    console.error(ansi.red(`Error: ${result.error}`));
+    return 1;
+  }
+
+  console.log(ansi.green(`Refreshed: "${result.learning.content}"`));
+  console.log(ansi.dim(`Confirmed at: ${result.learning.confirmedAt}`));
+  return 0;
+}
+
+// =============================================================================
 // F-016: Redact Command
 // =============================================================================
 
@@ -447,6 +496,8 @@ ${ansi.bold("Commands:")}
   learn <type> <content>    Add a confirmed learning
   forget <id>               Remove a learning by ID
   rel <subcommand>          Manage relationships
+  stale                     List stale learnings (>90 days)
+  refresh <id>              Re-confirm a learning
   redact <id> [reason]      Redact an event from the log
   repair                    Auto-repair from git history
   help                      Show this help
@@ -488,6 +539,10 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       return cmdForget(args);
     case "rel":
       return cmdRel(args);
+    case "stale":
+      return cmdStale();
+    case "refresh":
+      return cmdRefresh(args);
     case "redact":
       return cmdRedact(args);
     case "repair":
