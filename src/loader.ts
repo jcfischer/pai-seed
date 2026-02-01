@@ -6,6 +6,7 @@ import { validateSeed, type ValidationError } from "./validate";
 import { createDefaultSeed } from "./defaults";
 import { generateJsonSchema } from "./json-schema";
 import { deepMerge } from "./merge";
+import { needsMigration, migrateSeed } from "./migration";
 
 // =============================================================================
 // F-002: Types
@@ -18,7 +19,7 @@ export type LoadError = {
 };
 
 export type LoadResult =
-  | { ok: true; config: SeedConfig; created: boolean; merged: boolean; warnings?: string[] }
+  | { ok: true; config: SeedConfig; created: boolean; merged: boolean; warnings?: string[]; migrated?: { from: string; to: string } }
   | { ok: false; error: LoadError };
 
 export type WriteError = {
@@ -214,10 +215,35 @@ export async function loadSeed(seedPath?: string): Promise<LoadResult> {
       }
     }
 
+    // F-014: Check if migration is needed before merge+validate
+    let migrationInfo: { from: string; to: string } | undefined;
+    let effectiveParsed = parsed as Record<string, unknown>;
+
+    const migrationCheck = needsMigration(effectiveParsed);
+    if (migrationCheck.needed) {
+      const migrationResult = await migrateSeed(effectiveParsed, {
+        seedPath: path,
+        paiDir: dirname(path),
+      });
+      if (!migrationResult.ok) {
+        return {
+          ok: false,
+          error: {
+            code: "validation_error",
+            message: `Migration failed: ${migrationResult.error}`,
+          },
+        };
+      }
+      effectiveParsed = migrationResult.config as unknown as Record<string, unknown>;
+      migrationInfo = {
+        from: migrationResult.migratedFrom,
+        to: migrationResult.migratedTo,
+      };
+    }
+
     // Merge with defaults BEFORE validation (handles partial files)
     const defaults = createDefaultSeed() as unknown as Record<string, unknown>;
-    const existingRecord = parsed as Record<string, unknown>;
-    const merged = deepMerge(existingRecord, defaults);
+    const merged = deepMerge(effectiveParsed, defaults);
 
     // Validate the merged result
     const validation = validateSeed(merged);
@@ -235,7 +261,7 @@ export async function loadSeed(seedPath?: string): Promise<LoadResult> {
     const mergedConfig = validation.config;
 
     // Detect if merge changed anything by comparing serialized forms
-    const originalJson = JSON.stringify(parsed, null, 2);
+    const originalJson = JSON.stringify(effectiveParsed, null, 2);
     const mergedJson = JSON.stringify(mergedConfig, null, 2);
     const wasChanged = originalJson !== mergedJson;
 
@@ -250,6 +276,7 @@ export async function loadSeed(seedPath?: string): Promise<LoadResult> {
       created: false,
       merged: wasChanged,
       warnings: validation.warnings,
+      migrated: migrationInfo,
     };
   } catch (err) {
     // Catch-all: never throw

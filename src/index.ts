@@ -199,3 +199,24 @@ export {
   rejectAllProposals,
   cleanRejected,
 } from "./confirmation";
+
+// =============================================================================
+// F-014: Schema migration system
+// =============================================================================
+
+// Types
+export type {
+  MigrationResult,
+  MigrationFn,
+  MigrationOptions,
+  NeedsMigrationResult,
+} from "./migration";
+
+// Functions
+export {
+  registerMigration,
+  getMigrationPath,
+  migrateSeed,
+  needsMigration,
+  clearMigrations,
+} from "./migration";
