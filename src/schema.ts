@@ -30,6 +30,8 @@ export const proposalSchema = z.object({
   extractedAt: z.string().datetime(),
   status: z.enum(["pending", "accepted", "rejected"]),
   method: z.enum(["acr", "regex"]).optional(),
+  confidence: z.number().optional(),
+  decidedAt: z.string().datetime().optional(),
 });
 
 // =============================================================================
@@ -74,6 +76,26 @@ export const learnedLayerSchema = z.object({
 // =============================================================================
 
 /**
+ * F-021: Extraction stats — cumulative counters for feedback loop.
+ */
+const typeStatsSchema = z.object({
+  accepted: z.number(),
+  rejected: z.number(),
+});
+
+export const extractionStatsSchema = z.object({
+  accepted: z.number(),
+  rejected: z.number(),
+  byType: z.object({
+    pattern: typeStatsSchema,
+    insight: typeStatsSchema,
+    self_knowledge: typeStatsSchema,
+  }),
+  confidenceSum: z.object({ accepted: z.number(), rejected: z.number() }),
+  confidenceCount: z.object({ accepted: z.number(), rejected: z.number() }),
+});
+
+/**
  * State Layer — session-to-session operational state.
  */
 export const stateLayerSchema = z.object({
@@ -82,6 +104,7 @@ export const stateLayerSchema = z.object({
   proposals: z.array(proposalSchema),
   activeProjects: z.array(z.string()),
   checkpointRef: z.string().optional(),
+  extractionStats: extractionStatsSchema.optional(),
 });
 
 // =============================================================================
@@ -113,6 +136,7 @@ export const seedConfigSchema = z
 
 export type Learning = z.infer<typeof learningSchema>;
 export type Proposal = z.infer<typeof proposalSchema>;
+export type ExtractionStats = z.infer<typeof extractionStatsSchema>;
 export type Preferences = z.infer<typeof preferencesSchema>;
 export type IdentityLayer = z.infer<typeof identityLayerSchema>;
 export type LearnedLayer = z.infer<typeof learnedLayerSchema>;

@@ -24,6 +24,8 @@ import {
   cleanRejected,
   proposalToLearning,
   addLearningToCategory,
+  initExtractionStats,
+  updateExtractionStats,
 } from "./confirmation";
 import { resolveIdPrefix } from "./id-prefix";
 
@@ -119,6 +121,75 @@ async function cmdShow(seedPath?: string, json?: boolean): Promise<number> {
   return 0;
 }
 
+// =============================================================================
+// F-021: Extraction Health
+// =============================================================================
+
+const MIN_DECISIONS_FOR_ALERT = 10;
+
+export function computeExtractionHealth(config: SeedConfig): string | null {
+  const stats = config.state.extractionStats;
+  if (!stats) return null;
+
+  const decided = stats.accepted + stats.rejected;
+  if (decided === 0) return null;
+
+  const pending = config.state.proposals.filter((p) => p.status === "pending").length;
+  const total = decided + pending;
+  const rate = stats.accepted / decided;
+  const pct = (rate * 100).toFixed(1);
+
+  const lines: string[] = [];
+  lines.push(`Proposals: ${total} total (${stats.accepted} accepted, ${stats.rejected} rejected, ${pending} pending)`);
+  lines.push(`Acceptance rate: ${pct}% (${stats.accepted}/${decided} decided)`);
+
+  // Per-type breakdown
+  const types: Array<{ label: string; key: keyof typeof stats.byType }> = [
+    { label: "patterns", key: "pattern" },
+    { label: "insights", key: "insight" },
+    { label: "self_knowledge", key: "self_knowledge" },
+  ];
+  const typeParts: string[] = [];
+  for (const { label, key } of types) {
+    const t = stats.byType[key];
+    const tDecided = t.accepted + t.rejected;
+    if (tDecided > 0) {
+      const tPct = ((t.accepted / tDecided) * 100).toFixed(0);
+      typeParts.push(`${label} ${t.accepted}/${tDecided} (${tPct}%)`);
+    }
+  }
+  if (typeParts.length > 0) {
+    lines.push(`By type: ${typeParts.join(", ")}`);
+  }
+
+  // Average confidence
+  const accAvg = stats.confidenceCount.accepted > 0
+    ? (stats.confidenceSum.accepted / stats.confidenceCount.accepted).toFixed(2)
+    : null;
+  const rejAvg = stats.confidenceCount.rejected > 0
+    ? (stats.confidenceSum.rejected / stats.confidenceCount.rejected).toFixed(2)
+    : null;
+  if (accAvg || rejAvg) {
+    const confParts: string[] = [];
+    if (accAvg) confParts.push(`accepted=${accAvg}`);
+    if (rejAvg) confParts.push(`rejected=${rejAvg}`);
+    lines.push(`Avg confidence: ${confParts.join(", ")}`);
+  }
+
+  // Threshold alerts
+  if (decided >= MIN_DECISIONS_FOR_ALERT) {
+    if (rate > 0.9) {
+      lines.push(`Warning: ${pct}% acceptance rate. Extraction filter may be too loose.`);
+    } else if (rate < 0.1) {
+      lines.push(`Warning: ${pct}% acceptance rate. Extraction producing mostly noise.`);
+    }
+  } else {
+    lines.push(`Need ${MIN_DECISIONS_FOR_ALERT}+ decisions for health assessment (${decided} so far)`);
+  }
+
+  return lines.join("\n");
+}
+
 async function cmdStatus(seedPath?: string): Promise<number> {
   const path = resolveSeedPath(seedPath);
   console.log(`Path: ${path}`);
@@ -137,6 +208,20 @@ async function cmdStatus(seedPath?: string): Promise<number> {
     if (validation.valid) {
       console.log(`Version: ${validation.config.version}`);
       console.log(`Valid: ${ansi.green("yes")}`);
+
+      // Extraction health (F-021)
+      const health = computeExtractionHealth(validation.config);
+      if (health) {
+        console.log();
+        console.log(ansi.bold("Extraction health:"));
+        for (const line of health.split("\n")) {
+          if (line.startsWith("Warning:")) {
+            console.log(`  ${ansi.yellow(line)}`);
+          } else {
+            console.log(`  ${line}`);
+          }
+        }
+      }
     } else {
       console.log(`Valid: ${ansi.red("no")}`);
       for (const err of validation.errors) {
@@ -799,6 +884,11 @@ async function cmdProposalsReview(): Promise<number> {
     }
 
     const config = loadResult.config;
+    if (!config.state.extractionStats) {
+      config.state.extractionStats = initExtractionStats();
+    }
+    const stats = config.state.extractionStats;
+    const now = new Date().toISOString();
     let accepted = 0;
     let rejected = 0;
 
@@ -806,12 +896,16 @@ async function cmdProposalsReview(): Promise<number> {
       const found = config.state.proposals.find((p) => p.id === proposal.id);
       if (!found || found.status !== "pending") continue;
 
+      found.decidedAt = now;
+
       if (action === "accept") {
+        updateExtractionStats(stats, found.type, "accepted", found.confidence);
         const learning = proposalToLearning(found);
         addLearningToCategory(config, learning, found.type);
         config.state.proposals = config.state.proposals.filter((p) => p.id !== found.id);
         accepted++;
       } else {
+        updateExtractionStats(stats, found.type, "rejected", found.confidence);
         found.status = "rejected";
         rejected++;
       }

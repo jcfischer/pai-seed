@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createDefaultSeed } from "../src/defaults";
 import { writeSeed } from "../src/loader";
-import type { Learning, Proposal, IdentityLayer, LearnedLayer, StateLayer } from "../src/schema";
+import type { Learning, Proposal, IdentityLayer, LearnedLayer, StateLayer, ExtractionStats } from "../src/schema";
 import {
   formatIdentitySummary,
   formatLearningSummary,
@@ -13,6 +13,8 @@ import {
   generateSessionContext,
   sessionStartHook,
 } from "../src/session";
+import { computeExtractionHealth } from "../src/cli";
+import { initExtractionStats } from "../src/confirmation";
 // ContextMode type used indirectly via SessionContextOptions
 
 // =============================================================================
@@ -671,5 +673,123 @@ describe("sessionStartHook", () => {
     }
 
     expect(didThrow).toBe(false);
+  });
+});
+
+// =============================================================================
+// F-021: computeExtractionHealth — Pure function tests
+// =============================================================================
+
+describe("computeExtractionHealth", () => {
+  function makeConfigWithStats(stats: ExtractionStats, pendingCount = 0) {
+    const config = createDefaultSeed();
+    config.state.extractionStats = stats;
+    for (let i = 0; i < pendingCount; i++) {
+      config.state.proposals.push({
+        id: `p${i}`,
+        type: "pattern",
+        content: `proposal ${i}`,
+        source: "test",
+        extractedAt: new Date().toISOString(),
+        status: "pending",
+      });
+    }
+    return config;
+  }
+
+  test("returns null when no extractionStats", () => {
+    const config = createDefaultSeed();
+    expect(computeExtractionHealth(config)).toBeNull();
+  });
+
+  test("returns null when zero decisions", () => {
+    const config = makeConfigWithStats(initExtractionStats());
+    expect(computeExtractionHealth(config)).toBeNull();
+  });
+
+  test("shows acceptance rate and counts", () => {
+    const stats = initExtractionStats();
+    stats.accepted = 5;
+    stats.rejected = 3;
+    const config = makeConfigWithStats(stats, 40);
+
+    const health = computeExtractionHealth(config)!;
+    expect(health).toContain("48 total");
+    expect(health).toContain("5 accepted");
+    expect(health).toContain("3 rejected");
+    expect(health).toContain("40 pending");
+    expect(health).toContain("62.5%");
+    expect(health).toContain("5/8 decided");
+  });
+
+  test("shows per-type breakdown when types have decisions", () => {
+    const stats = initExtractionStats();
+    stats.accepted = 3;
+    stats.rejected = 1;
+    stats.byType.pattern = { accepted: 2, rejected: 1 };
+    stats.byType.insight = { accepted: 1, rejected: 0 };
+    const config = makeConfigWithStats(stats);
+
+    const health = computeExtractionHealth(config)!;
+    expect(health).toContain("patterns 2/3 (67%)");
+    expect(health).toContain("insights 1/1 (100%)");
+  });
+
+  test("shows average confidence when available", () => {
+    const stats = initExtractionStats();
+    stats.accepted = 2;
+    stats.rejected = 1;
+    stats.confidenceSum = { accepted: 1.6, rejected: 0.5 };
+    stats.confidenceCount = { accepted: 2, rejected: 1 };
+    const config = makeConfigWithStats(stats);
+
+    const health = computeExtractionHealth(config)!;
+    expect(health).toContain("accepted=0.80");
+    expect(health).toContain("rejected=0.50");
+  });
+
+  test("shows 'need more decisions' when below threshold", () => {
+    const stats = initExtractionStats();
+    stats.accepted = 3;
+    stats.rejected = 2;
+    const config = makeConfigWithStats(stats);
+
+    const health = computeExtractionHealth(config)!;
+    expect(health).toContain("Need 10+ decisions");
+    expect(health).toContain("5 so far");
+    expect(health).not.toContain("Warning:");
+  });
+
+  test("alerts when acceptance rate >90% with 10+ decisions", () => {
+    const stats = initExtractionStats();
+    stats.accepted = 19;
+    stats.rejected = 1;
+    const config = makeConfigWithStats(stats);
+
+    const health = computeExtractionHealth(config)!;
+    expect(health).toContain("Warning:");
+    expect(health).toContain("filter may be too loose");
+  });
+
+  test("alerts when acceptance rate <10% with 10+ decisions", () => {
+    const stats = initExtractionStats();
+    stats.accepted = 0;
+    stats.rejected = 15;
+    const config = makeConfigWithStats(stats);
+
+    const health = computeExtractionHealth(config)!;
+    expect(health).toContain("Warning:");
+    expect(health).toContain("mostly noise");
+  });
+
+  test("no alert when rate is between 10-90% with 10+ decisions", () => {
+    const stats = initExtractionStats();
+    stats.accepted = 6;
+    stats.rejected = 4;
+    const config = makeConfigWithStats(stats);
+
+    const health = computeExtractionHealth(config)!;
+    expect(health).not.toContain("Warning:");
+    expect(health).not.toContain("Need 10+ decisions");
   });
 });

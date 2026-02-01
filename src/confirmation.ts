@@ -1,4 +1,4 @@
-import type { Proposal, Learning, SeedConfig } from "./schema";
+import type { Proposal, Learning, SeedConfig, ExtractionStats } from "./schema";
 import { loadSeedWithGit, writeSeedWithCommit } from "./git";
 
 // =============================================================================
@@ -20,6 +20,56 @@ export type RejectResult =
 export type BulkResult =
   | { ok: true; count: number }
   | { ok: false; error: string };
+
+// =============================================================================
+// F-021: Extraction stats helpers
+// =============================================================================
+
+/**
+ * Return a zero-valued ExtractionStats object.
+ */
+export function initExtractionStats(): ExtractionStats {
+  return {
+    accepted: 0,
+    rejected: 0,
+    byType: {
+      pattern: { accepted: 0, rejected: 0 },
+      insight: { accepted: 0, rejected: 0 },
+      self_knowledge: { accepted: 0, rejected: 0 },
+    },
+    confidenceSum: { accepted: 0, rejected: 0 },
+    confidenceCount: { accepted: 0, rejected: 0 },
+  };
+}
+
+/**
+ * Increment extraction stats for a single decision.
+ * Mutates stats in place.
+ */
+export function updateExtractionStats(
+  stats: ExtractionStats,
+  type: Proposal["type"],
+  action: "accepted" | "rejected",
+  confidence?: number,
+): void {
+  stats[action]++;
+  stats.byType[type][action]++;
+  if (confidence != null) {
+    stats.confidenceSum[action] += confidence;
+    stats.confidenceCount[action]++;
+  }
+}
+
+/**
+ * Ensure config.state.extractionStats exists, initializing if needed.
+ * Returns the stats object.
+ */
+function ensureStats(config: SeedConfig): ExtractionStats {
+  if (!config.state.extractionStats) {
+    config.state.extractionStats = initExtractionStats();
+  }
+  return config.state.extractionStats;
+}
 
 // =============================================================================
 // F-007 1: proposalToLearning — Pure helper
@@ -139,6 +189,11 @@ export async function acceptProposal(
       return { ok: false, error: `Proposal '${proposalId}' is already ${proposal.status}` };
     }
 
+    // Track decision
+    proposal.decidedAt = new Date().toISOString();
+    const stats = ensureStats(config);
+    updateExtractionStats(stats, proposal.type, "accepted", proposal.confidence);
+
     // Convert to learning and route to category
     const learning = proposalToLearning(proposal);
     addLearningToCategory(config, learning, proposal.type);
@@ -195,6 +250,11 @@ export async function rejectProposal(
       return { ok: false, error: `Proposal '${proposalId}' is already ${proposal.status}` };
     }
 
+    // Track decision
+    proposal.decidedAt = new Date().toISOString();
+    const stats = ensureStats(config);
+    updateExtractionStats(stats, proposal.type, "rejected", proposal.confidence);
+
     // Set status to rejected
     proposal.status = "rejected";
 
@@ -237,8 +297,12 @@ export async function acceptAllProposals(
       return { ok: true, count: 0 };
     }
 
-    // Convert each pending proposal
+    // Track decisions and convert each pending proposal
+    const stats = ensureStats(config);
+    const now = new Date().toISOString();
     for (const proposal of pending) {
+      proposal.decidedAt = now;
+      updateExtractionStats(stats, proposal.type, "accepted", proposal.confidence);
       const learning = proposalToLearning(proposal);
       addLearningToCategory(config, learning, proposal.type);
     }
@@ -287,8 +351,12 @@ export async function rejectAllProposals(
       return { ok: true, count: 0 };
     }
 
-    // Set each pending proposal to rejected
+    // Track decisions and set each pending proposal to rejected
+    const stats = ensureStats(config);
+    const now = new Date().toISOString();
     for (const proposal of pending) {
+      proposal.decidedAt = now;
+      updateExtractionStats(stats, proposal.type, "rejected", proposal.confidence);
       proposal.status = "rejected";
     }
 

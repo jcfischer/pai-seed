@@ -278,6 +278,7 @@ function acrLearningsToProposals(
       extractedAt: now,
       status: "pending" as const,
       method: "acr" as const,
+      confidence: l.confidence,
     }));
 }
 

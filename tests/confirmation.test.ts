@@ -15,6 +15,8 @@ import {
   acceptAllProposals,
   rejectAllProposals,
   cleanRejected,
+  initExtractionStats,
+  updateExtractionStats,
 } from "../src/confirmation";
 
 // =============================================================================
@@ -732,5 +734,198 @@ describe("cleanRejected", () => {
     await log.exited;
     const msg = await new Response(log.stdout).text();
     expect(msg.trim()).toBe("Cleanup: removed 3 rejected proposals");
+  });
+});
+
+// =============================================================================
+// F-021: initExtractionStats — Pure function tests
+// =============================================================================
+
+describe("initExtractionStats", () => {
+  test("returns all-zero stats object", () => {
+    const stats = initExtractionStats();
+    expect(stats.accepted).toBe(0);
+    expect(stats.rejected).toBe(0);
+    expect(stats.byType.pattern.accepted).toBe(0);
+    expect(stats.byType.pattern.rejected).toBe(0);
+    expect(stats.byType.insight.accepted).toBe(0);
+    expect(stats.byType.insight.rejected).toBe(0);
+    expect(stats.byType.self_knowledge.accepted).toBe(0);
+    expect(stats.byType.self_knowledge.rejected).toBe(0);
+    expect(stats.confidenceSum.accepted).toBe(0);
+    expect(stats.confidenceSum.rejected).toBe(0);
+    expect(stats.confidenceCount.accepted).toBe(0);
+    expect(stats.confidenceCount.rejected).toBe(0);
+  });
+});
+
+// =============================================================================
+// F-021: updateExtractionStats — Pure function tests
+// =============================================================================
+
+describe("updateExtractionStats", () => {
+  test("increments accepted counters for pattern type", () => {
+    const stats = initExtractionStats();
+    updateExtractionStats(stats, "pattern", "accepted", 0.85);
+
+    expect(stats.accepted).toBe(1);
+    expect(stats.rejected).toBe(0);
+    expect(stats.byType.pattern.accepted).toBe(1);
+    expect(stats.confidenceSum.accepted).toBe(0.85);
+    expect(stats.confidenceCount.accepted).toBe(1);
+  });
+
+  test("increments rejected counters for insight type", () => {
+    const stats = initExtractionStats();
+    updateExtractionStats(stats, "insight", "rejected", 0.55);
+
+    expect(stats.rejected).toBe(1);
+    expect(stats.accepted).toBe(0);
+    expect(stats.byType.insight.rejected).toBe(1);
+    expect(stats.confidenceSum.rejected).toBe(0.55);
+    expect(stats.confidenceCount.rejected).toBe(1);
+  });
+
+  test("handles missing confidence (no confidence tracking)", () => {
+    const stats = initExtractionStats();
+    updateExtractionStats(stats, "self_knowledge", "accepted");
+
+    expect(stats.accepted).toBe(1);
+    expect(stats.byType.self_knowledge.accepted).toBe(1);
+    expect(stats.confidenceSum.accepted).toBe(0);
+    expect(stats.confidenceCount.accepted).toBe(0);
+  });
+
+  test("accumulates multiple decisions correctly", () => {
+    const stats = initExtractionStats();
+    updateExtractionStats(stats, "pattern", "accepted", 0.9);
+    updateExtractionStats(stats, "pattern", "accepted", 0.8);
+    updateExtractionStats(stats, "insight", "rejected", 0.5);
+
+    expect(stats.accepted).toBe(2);
+    expect(stats.rejected).toBe(1);
+    expect(stats.byType.pattern.accepted).toBe(2);
+    expect(stats.byType.insight.rejected).toBe(1);
+    expect(stats.confidenceSum.accepted).toBeCloseTo(1.7);
+    expect(stats.confidenceCount.accepted).toBe(2);
+  });
+});
+
+// =============================================================================
+// F-021: Stats tracked on accept/reject I/O tests
+// =============================================================================
+
+describe("F-021 stats tracking via accept/reject", () => {
+  let testDir: string;
+  let seedPath: string;
+
+  beforeEach(async () => {
+    testDir = await mkdtemp(join(tmpdir(), "pai-seed-stats-"));
+    seedPath = join(testDir, "seed.json");
+  });
+
+  afterEach(async () => {
+    await rm(testDir, { recursive: true, force: true });
+  });
+
+  test("acceptProposal increments stats and sets decidedAt", async () => {
+    await initTestGitRepo(testDir);
+
+    const seed = createDefaultSeed();
+    seed.state.proposals = [
+      makeProposal({ id: "s1", type: "pattern", confidence: 0.85 }),
+    ];
+    await writeSeedAndCommit(testDir, seed);
+
+    const result = await acceptProposal("s1", seedPath);
+    expect(result.ok).toBe(true);
+
+    const loadResult = await loadSeed(seedPath);
+    expect(loadResult.ok).toBe(true);
+    if (loadResult.ok) {
+      const stats = loadResult.config.state.extractionStats;
+      expect(stats).toBeDefined();
+      expect(stats!.accepted).toBe(1);
+      expect(stats!.rejected).toBe(0);
+      expect(stats!.byType.pattern.accepted).toBe(1);
+      expect(stats!.confidenceSum.accepted).toBeCloseTo(0.85);
+      expect(stats!.confidenceCount.accepted).toBe(1);
+    }
+  });
+
+  test("rejectProposal increments stats and sets decidedAt", async () => {
+    await initTestGitRepo(testDir);
+
+    const seed = createDefaultSeed();
+    seed.state.proposals = [
+      makeProposal({ id: "s2", type: "insight", confidence: 0.55 }),
+    ];
+    await writeSeedAndCommit(testDir, seed);
+
+    const result = await rejectProposal("s2", seedPath);
+    expect(result.ok).toBe(true);
+
+    const loadResult = await loadSeed(seedPath);
+    expect(loadResult.ok).toBe(true);
+    if (loadResult.ok) {
+      const stats = loadResult.config.state.extractionStats;
+      expect(stats).toBeDefined();
+      expect(stats!.rejected).toBe(1);
+      expect(stats!.byType.insight.rejected).toBe(1);
+      // decidedAt should be set on the rejected proposal
+      const proposal = loadResult.config.state.proposals.find((p) => p.id === "s2");
+      expect(proposal?.decidedAt).toBeDefined();
+    }
+  });
+
+  test("acceptAllProposals increments stats for each", async () => {
+    await initTestGitRepo(testDir);
+
+    const seed = createDefaultSeed();
+    seed.state.proposals = [
+      makeProposal({ id: "ba1", type: "pattern", confidence: 0.9 }),
+      makeProposal({ id: "ba2", type: "insight", confidence: 0.8 }),
+      makeProposal({ id: "ba3", type: "self_knowledge" }),
+    ];
+    await writeSeedAndCommit(testDir, seed);
+
+    const result = await acceptAllProposals(seedPath);
+    expect(result.ok).toBe(true);
+
+    const loadResult = await loadSeed(seedPath);
+    expect(loadResult.ok).toBe(true);
+    if (loadResult.ok) {
+      const stats = loadResult.config.state.extractionStats;
+      expect(stats).toBeDefined();
+      expect(stats!.accepted).toBe(3);
+      expect(stats!.byType.pattern.accepted).toBe(1);
+      expect(stats!.byType.insight.accepted).toBe(1);
+      expect(stats!.byType.self_knowledge.accepted).toBe(1);
+      expect(stats!.confidenceCount.accepted).toBe(2); // only 2 had confidence
+    }
+  });
+
+  test("rejectAllProposals increments stats for each", async () => {
+    await initTestGitRepo(testDir);
+
+    const seed = createDefaultSeed();
+    seed.state.proposals = [
+      makeProposal({ id: "br1", type: "pattern" }),
+      makeProposal({ id: "br2", type: "insight" }),
+    ];
+    await writeSeedAndCommit(testDir, seed);
+
+    const result = await rejectAllProposals(seedPath);
+    expect(result.ok).toBe(true);
+
+    const loadResult = await loadSeed(seedPath);
+    expect(loadResult.ok).toBe(true);
+    if (loadResult.ok) {
+      const stats = loadResult.config.state.extractionStats;
+      expect(stats).toBeDefined();
+      expect(stats!.rejected).toBe(2);
+      expect(stats!.byType.pattern.rejected).toBe(1);
+      expect(stats!.byType.insight.rejected).toBe(1);
+    }
   });
 });
