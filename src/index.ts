@@ -220,3 +220,16 @@ export {
   needsMigration,
   clearMigrations,
 } from "./migration";
+
+// =============================================================================
+// F-012: ACR integration
+// =============================================================================
+
+// Types
+export type { AcrDocument, AcrExportOptions, AcrExportResult } from "./acr";
+
+// Schemas
+export { acrDocumentSchema } from "./acr";
+
+// Functions
+export { exportLearnings, exportEventSummaries, exportAllForACR } from "./acr";

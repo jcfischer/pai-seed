@@ -1,10 +1,10 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
-import { mkdtemp, rm, readFile } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createDefaultSeed } from "../src/defaults";
 import { writeSeed, loadSeed } from "../src/loader";
-import { initGitRepo, writeSeedWithCommit } from "../src/git";
+import { initGitRepo } from "../src/git";
 
 // =============================================================================
 // Helpers
