@@ -313,3 +313,29 @@ export {
   reconfirmLearning,
   generateReviewPrompt,
 } from "./freshness";
+
+// =============================================================================
+// F-025: Semantic learning search
+// =============================================================================
+
+// Types
+export type { RankedLearning } from "./embeddings";
+
+// Functions
+export {
+  cosineSimilarity,
+  initEmbeddingsDb,
+  resolveEmbeddingsDbPath,
+  contentHash,
+  storeEmbedding,
+  getStoredEmbedding,
+  getAllEmbeddings,
+  deleteEmbedding,
+  countEmbeddings,
+  generateEmbedding,
+  resetPipeline,
+  embedLearning,
+  embedAllMissing,
+  searchSimilar,
+  retrieveRelevantLearnings,
+} from "./embeddings";

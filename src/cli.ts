@@ -1014,7 +1014,8 @@ ${ansi.bold("Usage:")}
 ${ansi.bold("Actions:")}
   list [--type=X] [--verbose]   List confirmed learnings
   show <id>                     Show full detail for a learning
-  search <query> [--type=X]     Search learning content
+  search <query> [--type=X]     Search learning content (add --semantic for AI-ranked)
+  embed                         Generate embeddings for all learnings
 
 ${ansi.bold("Types:")} pattern, insight, self_knowledge
 
@@ -1022,7 +1023,9 @@ ${ansi.bold("Examples:")}
   pai-seed learnings list
   pai-seed learnings list --type=pattern
   pai-seed learnings show gDo_K4_n
-  pai-seed learnings search "TypeScript"`);
+  pai-seed learnings search "TypeScript"
+  pai-seed learnings search "error handling" --semantic
+  pai-seed learnings embed`);
     return 0;
   }
 
@@ -1033,6 +1036,8 @@ ${ansi.bold("Examples:")}
       return cmdLearningsShow(args.slice(1));
     case "search":
       return cmdLearningsSearch(args.slice(1));
+    case "embed":
+      return cmdLearningsEmbed();
     default:
       console.error(ansi.red(`Unknown learnings action: ${action}`));
       console.error('Run "pai-seed learnings help" for usage.');
@@ -1124,11 +1129,12 @@ async function cmdLearningsShow(args: string[]): Promise<number> {
 
 async function cmdLearningsSearch(args: string[]): Promise<number> {
   const typeFilter = parseTypeFilter(args);
+  const semantic = args.includes("--semantic");
   const queryArgs = args.filter((a) => !a.startsWith("--"));
   const query = queryArgs.join(" ");
 
   if (!query) {
-    console.error(ansi.red("Usage: pai-seed learnings search <query>"));
+    console.error(ansi.red("Usage: pai-seed learnings search <query> [--semantic] [--type=X]"));
     return 1;
   }
 
@@ -1143,30 +1149,118 @@ async function cmdLearningsSearch(args: string[]): Promise<number> {
     items = items.filter((i) => i.type === typeFilter);
   }
 
+  // Substring matches
   const lowerQuery = query.toLowerCase();
-  const matches = items.filter((i) =>
+  const substringMatches = items.filter((i) =>
     i.learning.content.toLowerCase().includes(lowerQuery),
   );
 
-  if (matches.length === 0) {
+  // Semantic matches (if --semantic flag)
+  type ScoredMatch = { learning: Learning; type: string; score: number; method: "text" | "semantic" };
+  const allMatches: ScoredMatch[] = [];
+  const seenIds = new Set<string>();
+
+  // Add substring matches first (score 1.0 for exact text match)
+  for (const m of substringMatches) {
+    allMatches.push({ learning: m.learning, type: m.type, score: 1.0, method: "text" });
+    seenIds.add(m.learning.id);
+  }
+
+  if (semantic) {
+    try {
+      const { searchSimilar, initEmbeddingsDb, countEmbeddings } = await import("./embeddings");
+      const db = initEmbeddingsDb();
+      try {
+        const embCount = countEmbeddings(db);
+        if (embCount === 0) {
+          console.error(ansi.dim("No embeddings found. Run `pai-seed learnings embed` first."));
+        } else {
+          const similar = await searchSimilar(db, query, 20, 0.2);
+          // Map IDs to learning items
+          const idToItem = new Map(items.map((i) => [i.learning.id, i]));
+          for (const { id, score } of similar) {
+            if (!seenIds.has(id)) {
+              const item = idToItem.get(id);
+              if (item) {
+                allMatches.push({ learning: item.learning, type: item.type, score, method: "semantic" });
+                seenIds.add(id);
+              }
+            }
+          }
+        }
+      } finally {
+        db.close();
+      }
+    } catch {
+      console.error(ansi.dim("Semantic search unavailable — using text matching only."));
+    }
+  }
+
+  if (allMatches.length === 0) {
     console.log(`No learnings matching "${query}".`);
     return 0;
   }
 
-  console.log(ansi.bold(`${matches.length} match${matches.length === 1 ? "" : "es"} for "${query}":\n`));
+  // Sort: text matches first, then semantic by score
+  allMatches.sort((a, b) => {
+    if (a.method !== b.method) return a.method === "text" ? -1 : 1;
+    return b.score - a.score;
+  });
 
-  for (const { learning, type } of matches) {
-    // Highlight matching portion
-    const idx = learning.content.toLowerCase().indexOf(lowerQuery);
-    const before = learning.content.slice(0, idx);
-    const matched = learning.content.slice(idx, idx + query.length);
-    const after = learning.content.slice(idx + query.length);
-    const highlighted = `${before}${ansi.bold(matched)}${after}`;
+  console.log(ansi.bold(`${allMatches.length} match${allMatches.length === 1 ? "" : "es"} for "${query}":\n`));
 
-    console.log(`${ansi.dim(shortId(learning.id))}  ${typeBadge(type).padEnd(isTTY ? 19 : 10)}  ${truncate(highlighted, 70)}`);
+  for (const { learning, type, score, method } of allMatches) {
+    if (method === "text") {
+      // Highlight matching portion
+      const idx = learning.content.toLowerCase().indexOf(lowerQuery);
+      const before = learning.content.slice(0, idx);
+      const matched = learning.content.slice(idx, idx + query.length);
+      const after = learning.content.slice(idx + query.length);
+      const highlighted = `${before}${ansi.bold(matched)}${after}`;
+      console.log(`${ansi.dim(shortId(learning.id))}  ${typeBadge(type).padEnd(isTTY ? 19 : 10)}  ${truncate(highlighted, 70)}`);
+    } else {
+      const scoreLabel = ansi.dim(`[${score.toFixed(2)}]`);
+      console.log(`${ansi.dim(shortId(learning.id))}  ${typeBadge(type).padEnd(isTTY ? 19 : 10)}  ${scoreLabel} ${truncate(learning.content, 65)}`);
+    }
   }
 
   return 0;
+}
+
+// =============================================================================
+// F-025: Batch embed command
+// =============================================================================
+
+async function cmdLearningsEmbed(): Promise<number> {
+  const result = await loadSeed();
+  if (!result.ok) {
+    console.error(ansi.red(`Error: ${result.error.message}`));
+    return 1;
+  }
+
+  const total = allLearnings(result.config).length;
+  if (total === 0) {
+    console.log("No confirmed learnings to embed.");
+    return 0;
+  }
+
+  console.log(`Embedding ${total} learnings...`);
+
+  try {
+    const { embedAllMissing } = await import("./embeddings");
+    const stats = await embedAllMissing(result.config);
+
+    console.log(ansi.green(`Done.`));
+    console.log(`  Embedded: ${stats.embedded}`);
+    console.log(`  Skipped (up to date): ${stats.skipped}`);
+    if (stats.failed > 0) {
+      console.log(ansi.yellow(`  Failed: ${stats.failed}`));
+    }
+    return 0;
+  } catch (err) {
+    console.error(ansi.red(`Embedding failed: ${err instanceof Error ? err.message : err}`));
+    return 1;
+  }
 }
 
 // =============================================================================

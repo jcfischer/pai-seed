@@ -1,5 +1,29 @@
 import type { Proposal, Learning, SeedConfig, ExtractionStats } from "./schema";
 import { loadSeedWithGit, writeSeedWithCommit } from "./git";
+import { embedLearning, initEmbeddingsDb } from "./embeddings";
+
+// =============================================================================
+// F-025: Embedding on accept (fire-and-forget)
+// =============================================================================
+
+/**
+ * Try to embed a learning after acceptance. Non-blocking, never throws.
+ * If model or DB is unavailable, silently skips.
+ */
+function tryEmbedLearning(learningId: string, content: string): void {
+  (async () => {
+    try {
+      const db = initEmbeddingsDb();
+      try {
+        await embedLearning(db, learningId, content);
+      } finally {
+        db.close();
+      }
+    } catch {
+      // Silently skip — embedding will happen on next batch or search
+    }
+  })();
+}
 
 // =============================================================================
 // F-007: Types
@@ -206,6 +230,9 @@ export async function acceptProposal(
     // Commit
     const commitMsg = `Confirm: accepted '${proposal.content.slice(0, 50)}'`;
     await writeSeedWithCommit(config, commitMsg, seedPath);
+
+    // F-025: Generate embedding for the new learning (fire-and-forget)
+    tryEmbedLearning(learning.id, learning.content);
 
     return { ok: true, learning };
   } catch (err) {
