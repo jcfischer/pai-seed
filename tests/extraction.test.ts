@@ -385,13 +385,20 @@ describe("writeProposals", () => {
 describe("extractionHook", () => {
   let testDir: string;
   let seedPath: string;
+  const originalWhich = Bun.which;
 
   beforeEach(async () => {
     testDir = await mkdtemp(join(tmpdir(), "pai-seed-hook-test-"));
     seedPath = join(testDir, "seed.json");
+    // Force regex fallback path — these tests predate ACR integration
+    (Bun as any).which = (...args: any[]) => {
+      if (args[0] === "acr") return null;
+      return originalWhich.apply(Bun, args as any);
+    };
   });
 
   afterEach(async () => {
+    (Bun as any).which = originalWhich;
     await rm(testDir, { recursive: true, force: true });
   });
 

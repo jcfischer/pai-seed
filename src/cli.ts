@@ -33,14 +33,43 @@ const ansi = {
 // F-011: Command Handlers
 // =============================================================================
 
-async function cmdShow(seedPath?: string): Promise<number> {
+async function cmdShow(seedPath?: string, json?: boolean): Promise<number> {
   const result = await loadSeed(seedPath);
   if (!result.ok) {
-    console.error(ansi.red(`Error: ${result.error.message}`));
+    if (json) {
+      console.log(JSON.stringify({ error: result.error.message }));
+    } else {
+      console.error(ansi.red(`Error: ${result.error.message}`));
+    }
     return 1;
   }
 
   const { config } = result;
+
+  // JSON output for machine consumption (used by ACR)
+  if (json) {
+    const allLearnings = [
+      ...config.learned.patterns.map((l) => ({ ...l, _type: "pattern" as const })),
+      ...config.learned.insights.map((l) => ({ ...l, _type: "insight" as const })),
+      ...config.learned.selfKnowledge.map((l) => ({ ...l, _type: "self_knowledge" as const })),
+    ];
+
+    const learnings = allLearnings.map((l) => ({
+      id: l.id,
+      type: l._type,
+      content: l.content,
+      confirmed: l.confirmed ?? false,
+      tags: l.tags ?? [],
+      createdAt: new Date(l.extractedAt).getTime(),
+      updatedAt: new Date(l.confirmedAt ?? l.extractedAt).getTime(),
+    }));
+
+    console.log(JSON.stringify({
+      version: config.version,
+      learnings,
+    }));
+    return 0;
+  }
 
   // Identity
   console.log(ansi.bold("=== Identity ==="));
@@ -490,7 +519,7 @@ ${ansi.bold("Usage:")}
   pai-seed <command> [args...]
 
 ${ansi.bold("Commands:")}
-  show                      Show seed configuration summary
+  show [--json]             Show seed configuration summary
   status                    Quick health check (path, version, validity)
   diff                      Show git diff for seed.json
   learn <type> <content>    Add a confirmed learning
@@ -528,7 +557,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
 
   switch (command) {
     case "show":
-      return cmdShow();
+      return cmdShow(undefined, args.includes("--json"));
     case "status":
       return cmdStatus();
     case "diff":
