@@ -93,6 +93,9 @@ export {
   formatSessionState,
   generateSessionContext,
   sessionStartHook,
+  // F-022
+  formatRelevantLearnings,
+  formatCompactProposals,
 } from "./session";
 
 // =============================================================================

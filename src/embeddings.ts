@@ -400,8 +400,12 @@ export async function retrieveRelevantLearnings(
             }
           }
 
-          return ranked.sort((a, b) => b.score - a.score).slice(0, maxResults);
+          if (ranked.length > 0) {
+            return ranked.sort((a, b) => b.score - a.score).slice(0, maxResults);
+          }
+          // No ID matches — fall through to recency
         }
+        // No matches above minSimilarity — fall through to recency
       }
     } finally {
       db.close();

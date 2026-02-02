@@ -25,6 +25,10 @@ export type SessionContext =
       needsSetup: boolean;
       config: SeedConfig | null;
       proposalCount: number;
+      // F-022: Progressive disclosure metadata
+      learningsShown?: number;
+      learningsTotal?: number;
+      tokenEstimate?: number;
     }
   | { ok: false; error: string };
 
@@ -94,6 +98,103 @@ export function formatLearningSummary(learned: LearnedLayer): string {
       lines.push(`  ... and ${remaining} more`);
     }
   }
+
+  return lines.join("\n");
+}
+
+// =============================================================================
+// F-022: formatRelevantLearnings — Semantic retrieval
+// =============================================================================
+
+/**
+ * Format relevant learnings using F-025 semantic retrieval.
+ * Falls back to recency when embeddings unavailable (score=0).
+ * Returns empty string when no learnings exist.
+ */
+export async function formatRelevantLearnings(
+  config: SeedConfig,
+  context: { project?: string; cwd?: string },
+): Promise<string> {
+  const totalLearnings =
+    config.learned.patterns.length +
+    config.learned.insights.length +
+    config.learned.selfKnowledge.length;
+
+  if (totalLearnings === 0) {
+    return "";
+  }
+
+  try {
+    // Dynamic import to avoid embedding dependency at startup
+    const { retrieveRelevantLearnings } = await import("./embeddings");
+
+    const ranked = await retrieveRelevantLearnings(config, context, {
+      maxResults: 5,
+      minSimilarity: 0.2,
+    });
+
+    if (ranked.length === 0) {
+      return ""; // No relevant learnings found
+    }
+
+    const isSemantic = ranked[0].score > 0;
+    const header = isSemantic
+      ? `Relevant learnings (${ranked.length}/${totalLearnings}):`
+      : `Recent learnings (${ranked.length}/${totalLearnings}):`;
+
+    const lines: string[] = [header];
+
+    for (const { learning, type, score } of ranked) {
+      if (isSemantic) {
+        lines.push(`  [${score.toFixed(2)}] ${type}: ${learning.content}`);
+      } else {
+        lines.push(`  - ${type}: ${learning.content}`);
+      }
+    }
+
+    return lines.join("\n");
+  } catch {
+    // Embedding module unavailable — silent fallback to empty
+    return "";
+  }
+}
+
+// =============================================================================
+// F-022: formatCompactProposals — Compact index format
+// =============================================================================
+
+/**
+ * Format proposals as compact index.
+ * ID prefix (5 chars), type, truncated content (40 chars), confidence.
+ * Replaces old formatProposals for F-022.
+ */
+export function formatCompactProposals(proposals: Proposal[]): string {
+  const pending = proposals.filter((p) => p.status === "pending");
+
+  if (pending.length === 0) {
+    return "";
+  }
+
+  // Sort by recency (most recent first)
+  const sorted = [...pending].sort(
+    (a, b) =>
+      new Date(b.extractedAt).getTime() - new Date(a.extractedAt).getTime(),
+  );
+
+  const lines: string[] = [`Pending proposals (${pending.length}):`];
+
+  for (const p of sorted) {
+    const idPrefix = p.id.slice(0, 5);
+    const truncated =
+      p.content.length > 40
+        ? p.content.slice(0, 40) + " ..."
+        : p.content;
+    const confidence = p.confidence?.toFixed(2) ?? "N/A";
+    lines.push(`  ${idPrefix} ${p.type.padEnd(14)} "${truncated}" (${confidence})`);
+  }
+
+  lines.push("");
+  lines.push("Review: `pai-seed proposals review`");
 
   return lines.join("\n");
 }
@@ -232,14 +333,28 @@ export async function generateSessionContext(
       sections.push(formatIdentitySummary(config.identity));
     }
 
-    // Learnings
-    const learningSummary = formatLearningSummary(config.learned);
+    // F-022: Learnings with semantic retrieval
+    const totalLearnings =
+      config.learned.patterns.length +
+      config.learned.insights.length +
+      config.learned.selfKnowledge.length;
+    let learningsShown = 0;
+
+    const learningSummary = await formatRelevantLearnings(config, {
+      project: config.state.activeProjects[0],
+      cwd: process.cwd(),
+    });
     if (learningSummary) {
       sections.push(learningSummary);
+      // Count shown learnings from output
+      const matches = learningSummary.match(/(?:Relevant|Recent) learnings \((\d+)\/\d+\):/);
+      if (matches) {
+        learningsShown = parseInt(matches[1], 10);
+      }
     }
 
-    // Proposals
-    const proposalSummary = formatProposals(config.state.proposals);
+    // F-022: Proposals with compact format
+    const proposalSummary = formatCompactProposals(config.state.proposals);
     if (proposalSummary) {
       sections.push(proposalSummary);
     }
@@ -247,12 +362,18 @@ export async function generateSessionContext(
     // State
     sections.push(formatSessionState(config.state));
 
+    const contextStr = sections.join("\n\n");
+
     return {
       ok: true,
-      context: sections.join("\n\n"),
+      context: contextStr,
       needsSetup: false,
       config,
       proposalCount: pendingProposals.length,
+      // F-022: Metadata
+      learningsShown,
+      learningsTotal: totalLearnings,
+      tokenEstimate: Math.ceil(contextStr.length / 4),
     };
   } catch (err) {
     return {

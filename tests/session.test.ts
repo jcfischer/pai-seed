@@ -793,3 +793,230 @@ describe("computeExtractionHealth", () => {
     expect(health).not.toContain("Need 10+ decisions");
   });
 });
+
+// =============================================================================
+// F-022: Progressive Disclosure — formatRelevantLearnings
+// =============================================================================
+
+describe("F-022: formatRelevantLearnings", () => {
+  // Import will be added to session.ts
+  const { formatRelevantLearnings } = require("../src/session");
+
+  test("T-22.3: returns empty string when no learnings exist", async () => {
+    const config = createDefaultSeed();
+    // learned layer is already empty by default
+
+    const result = await formatRelevantLearnings(config, { project: "test", cwd: "/test" });
+
+    expect(result).toBe("");
+  });
+
+  test("T-22.1: returns learnings with recency fallback when no embeddings", async () => {
+    const config = createDefaultSeed();
+    config.learned.patterns = [
+      makeLearning("Prefers explicit error handling", true),
+      makeLearning("Uses Zod for all schema validation", true),
+      makeLearning("Tests use temp dirs", true),
+    ];
+    // Total: 3 learnings
+
+    // Without embeddings, retrieval falls back to recency (score=0)
+    const result = await formatRelevantLearnings(config, { project: "test", cwd: "/test" });
+
+    expect(result).toContain("Recent learnings (");
+    expect(result).toContain("/3):");
+    // Recency fallback: no scores shown
+    expect(result).not.toMatch(/\[0\.\d{2}\]/);
+    expect(result).toContain("- pattern:");
+    expect(result).toContain("Prefers explicit error handling");
+  });
+
+  test("T-22.2: truncates to maxResults when many learnings exist", async () => {
+    const config = createDefaultSeed();
+    config.learned.patterns = Array.from({ length: 15 }, (_, i) =>
+      makeLearning(`Pattern ${i + 1}`, true)
+    );
+    // Total: 15 learnings
+
+    const result = await formatRelevantLearnings(config, { project: "test", cwd: "/test" });
+
+    expect(result).toContain("Recent learnings (5/15):"); // maxResults=5
+    // Should show exactly 5 items
+    const lines = result.split("\n").filter((l: string) => l.startsWith("  -"));
+    expect(lines.length).toBe(5);
+  });
+});
+
+// =============================================================================
+// F-022: Progressive Disclosure — formatCompactProposals
+// =============================================================================
+
+describe("F-022: formatCompactProposals", () => {
+  // Will replace formatProposals
+  const { formatCompactProposals } = require("../src/session");
+
+  test("T-22.5: returns empty string when no proposals exist", () => {
+    const result = formatCompactProposals([]);
+    expect(result).toBe("");
+  });
+
+  test("T-22.4: returns compact index format with ID, type, truncated content, confidence", () => {
+    const proposals: Proposal[] = [
+      {
+        id: "abc123456789",
+        type: "pattern",
+        content: "Short content",
+        source: "test",
+        extractedAt: new Date().toISOString(),
+        status: "pending",
+        confidence: 0.82,
+      },
+      {
+        id: "def789012345",
+        type: "insight",
+        content: "Medium length content here",
+        source: "test",
+        extractedAt: new Date().toISOString(),
+        status: "pending",
+        confidence: 0.71,
+      },
+      {
+        id: "ghi345678901",
+        type: "pattern",
+        content: "Very long content that exceeds forty characters and needs truncation",
+        source: "test",
+        extractedAt: new Date().toISOString(),
+        status: "pending",
+        confidence: 0.95,
+      },
+    ];
+
+    const result = formatCompactProposals(proposals);
+
+    expect(result).toContain("Pending proposals (3):");
+    // Check ID truncation (5 chars)
+    expect(result).toContain("abc12");
+    expect(result).toContain("def78");
+    expect(result).toContain("ghi34");
+    // Check type badge
+    expect(result).toContain("pattern");
+    expect(result).toContain("insight");
+    // Check confidence with 2 decimals
+    expect(result).toContain("(0.82)");
+    expect(result).toContain("(0.71)");
+    expect(result).toContain("(0.95)");
+    // Check truncation with ellipsis (truncated at 40 chars)
+    expect(result).toMatch(/Very long content that exceeds forty cha \.\.\./);  // "forty cha" are chars 35-43
+    // Check footer
+    expect(result).toContain("Review: `pai-seed proposals review`");
+  });
+
+  test("T-22.6: shows N/A for undefined confidence", () => {
+    const proposals: Proposal[] = [
+      {
+        id: "test12345",
+        type: "pattern",
+        content: "Test",
+        source: "test",
+        extractedAt: new Date().toISOString(),
+        status: "pending",
+        // confidence is undefined
+      },
+    ];
+
+    const result = formatCompactProposals(proposals);
+
+    expect(result).toContain("(N/A)");
+    expect(result).not.toContain("undefined");
+  });
+});
+
+// =============================================================================
+// F-022: Progressive Disclosure — generateSessionContext integration
+// =============================================================================
+
+describe("F-022: generateSessionContext with progressive disclosure", () => {
+  test("T-22.7: includes metadata fields (learningsShown, learningsTotal, tokenEstimate)", async () => {
+    const seedPath = join(testDir, "seed.json");
+    await initTestGitRepo(testDir);
+
+    const seed = createDefaultSeed();
+    seed.identity.principalName = "Jens-Christian";
+    seed.identity.aiName = "Nova";
+    seed.identity.catchphrase = "Nova online.";
+    seed.learned.patterns = Array.from({ length: 15 }, (_, i) =>
+      makeLearning(`Pattern ${i + 1}`, true)
+    );
+    await writeSeed(seed, seedPath);
+
+    const result = await generateSessionContext(seedPath);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.learningsShown).toBeDefined();
+      expect(result.learningsTotal).toBe(15);
+      expect(result.tokenEstimate).toBeGreaterThan(0);
+    }
+  });
+
+  test("T-22.8: handles empty seed with zero metadata", async () => {
+    const seedPath = join(testDir, "seed.json");
+    await initTestGitRepo(testDir);
+
+    const seed = createDefaultSeed();
+    seed.identity.principalName = "Jens-Christian";
+    seed.identity.aiName = "Nova";
+    seed.identity.catchphrase = "Nova online.";
+    // No learnings, no proposals
+    await writeSeed(seed, seedPath);
+
+    const result = await generateSessionContext(seedPath);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.learningsShown).toBe(0);
+      expect(result.learningsTotal).toBe(0);
+      expect(result.tokenEstimate).toBeGreaterThan(0); // Still has version + state
+      expect(result.context).toContain("Seed: v"); // Version always present
+    }
+  });
+
+  test("T-22.9: produces progressive disclosure format (no old format)", async () => {
+    const seedPath = join(testDir, "seed.json");
+    await initTestGitRepo(testDir);
+
+    const seed = createDefaultSeed();
+    seed.identity.principalName = "Jens-Christian";
+    seed.identity.aiName = "Nova";
+    seed.identity.catchphrase = "Nova online.";
+    seed.learned.patterns = Array.from({ length: 15 }, (_, i) =>
+      makeLearning(`Pattern ${i + 1}`, true)
+    );
+    seed.state.proposals = [
+      {
+        id: "abc123456",
+        type: "pattern",
+        content: "Test proposal",
+        source: "test",
+        extractedAt: new Date().toISOString(),
+        status: "pending",
+        confidence: 0.75,
+      },
+    ];
+    await writeSeed(seed, seedPath);
+
+    const result = await generateSessionContext(seedPath);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // Should use new format
+      expect(result.context).toMatch(/(?:Relevant|Recent) learnings \(\d+\/\d+\):/);
+      // Should NOT use old format
+      expect(result.context).not.toContain("Learnings: "); // old summary line
+      expect(result.context).not.toMatch(/\d+ pattern\w*, \d+ insight/); // old count format
+      // Proposals should be compact
+      expect(result.context).toContain("abc12"); // 5-char ID
+      expect(result.context).toContain("(0.75)"); // confidence
+    }
+  });
+});
