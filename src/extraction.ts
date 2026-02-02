@@ -58,6 +58,137 @@ function truncateContent(content: string): string {
 }
 
 // =============================================================================
+// F-027: JSONL Transcript Parsing
+// =============================================================================
+
+/**
+ * Parse a Claude Code JSONL transcript into natural language text.
+ * Extracts user and assistant message content, skipping tool calls,
+ * progress events, file snapshots, and other metadata.
+ */
+export function parseJsonlTranscript(raw: string): string {
+  if (!raw || !raw.trim()) return "";
+
+  const lines = raw.trim().split("\n");
+  const textParts: string[] = [];
+
+  for (const line of lines) {
+    try {
+      const entry = JSON.parse(line);
+
+      // Only extract user and assistant messages
+      if (entry.type !== "user" && entry.type !== "assistant") continue;
+
+      const msg = entry.message;
+      if (!msg) continue;
+
+      // Handle string content directly
+      if (typeof msg.content === "string") {
+        if (msg.content.trim()) textParts.push(msg.content.trim());
+        continue;
+      }
+
+      // Handle array of content blocks (extract text blocks only)
+      if (Array.isArray(msg.content)) {
+        for (const block of msg.content) {
+          if (
+            block.type === "text" &&
+            typeof block.text === "string" &&
+            block.text.trim()
+          ) {
+            textParts.push(block.text.trim());
+          }
+        }
+      }
+    } catch {
+      // Skip malformed lines
+    }
+  }
+
+  return textParts.join("\n\n");
+}
+
+// =============================================================================
+// F-027: Transcript Size Management
+// =============================================================================
+
+export const MAX_EXTRACTION_CHARS = 50_000;
+
+/**
+ * Truncate transcript to last N chars with paragraph boundary alignment.
+ * Recency bias: recent conversation is more relevant for learning extraction.
+ */
+export function truncateForExtraction(
+  text: string,
+  maxChars?: number,
+): string {
+  const limit =
+    maxChars ??
+    parseInt(process.env.PAI_EXTRACTION_MAX_CHARS || String(MAX_EXTRACTION_CHARS), 10);
+
+  if (text.length <= limit) return text;
+
+  // Take the last `limit` characters
+  const cutPoint = text.length - limit;
+
+  // Find the first \n\n boundary after the cut point to avoid splitting mid-sentence
+  // Search up to 5000 chars ahead for a clean boundary
+  const boundaryIdx = text.indexOf("\n\n", cutPoint);
+  const startIdx = boundaryIdx !== -1 && boundaryIdx < cutPoint + 5000
+    ? boundaryIdx + 2  // skip past the \n\n
+    : cutPoint;        // no nearby boundary, use raw cut
+
+  return text.slice(startIdx);
+}
+
+// =============================================================================
+// F-027: Noise Filtering — Algorithm format artifact blocklist
+// =============================================================================
+
+const NOISE_PATTERNS: RegExp[] = [
+  /\*\*[^*]+\*\*:/,       // "**Bold label**:" markdown emphasis wrapping
+  /\w\*\*[\s,.)]/,        // "word** " — broken/trailing markdown bold
+  /[:\w]\*\*/,            // ":/**" or "word**" — markdown bold artifacts
+  /[━═─]{3,}/,            // Box-drawing characters (algorithm headers)
+  /^\s*[│┃|]\s/,          // Table/border prefixes
+  /\d+\.\s*\[/,           // Numbered list with brackets "1. [type]"
+  /^\[[\w_]+\]\s/,         // "[type] content" — bracket-tagged content
+  /^(?:Phase|OBSERVE|THINK|PLAN|BUILD|EXECUTE|VERIFY|LEARN)\b/i,  // Algorithm phase names
+];
+
+function isNoisySentence(sentence: string): boolean {
+  return NOISE_PATTERNS.some((pattern) => pattern.test(sentence));
+}
+
+// =============================================================================
+// F-027: Content Quality Gate
+// =============================================================================
+
+export const MIN_PROPOSAL_CONTENT_LENGTH = 20;
+
+/**
+ * Validate that proposal content is meaningful (not formatting garbage).
+ * - Must be >= 20 chars after trimming
+ * - Must contain at least 3 word characters
+ * - After stripping markdown formatting, remaining text must be >= 10 chars
+ */
+export function isValidProposalContent(content: string): boolean {
+  const trimmed = content.trim();
+
+  if (trimmed.length < MIN_PROPOSAL_CONTENT_LENGTH) return false;
+
+  // Must have at least 3 word characters
+  const wordChars = trimmed.match(/\w/g);
+  if (!wordChars || wordChars.length < 3) return false;
+
+  // After stripping markdown formatting, remaining text must be >= 10 chars
+  const stripped = trimmed.replace(/[*_#\-=:]/g, "").trim();
+  if (stripped.length < 10) return false;
+
+  return true;
+}
+
+// =============================================================================
 // F-006: Signal Phrases
 // =============================================================================
 
@@ -108,6 +239,11 @@ export function detectLearningSignals(text: string): LearningSignal[] {
   for (const sentence of sentences) {
     const cleaned = cleanSentence(sentence);
     if (cleaned.length < 10) {
+      continue;
+    }
+
+    // F-027: Skip algorithm format artifacts
+    if (isNoisySentence(cleaned) || isNoisySentence(sentence)) {
       continue;
     }
 
@@ -166,6 +302,9 @@ export function extractProposals(
   const proposals: Proposal[] = [];
 
   for (const signal of signals) {
+    // F-027: Content quality gate
+    if (!isValidProposalContent(signal.content)) continue;
+
     const key = signal.content.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
@@ -265,6 +404,8 @@ function acrLearningsToProposals(
 
   return learnings
     .filter((l) => {
+      // F-027: Content quality gate
+      if (!isValidProposalContent(l.content)) return false;
       const key = l.content.toLowerCase();
       if (seen.has(key)) return false;
       seen.add(key);
@@ -334,8 +475,11 @@ export async function extractionHook(
   try {
     let proposals: Proposal[];
 
+    // F-027: Truncate to last N chars before processing (recency bias)
+    const truncated = truncateForExtraction(transcript);
+
     // Pre-filter transcript: strip code blocks, JSON, tool output
-    const cleaned = stripStructuredContent(transcript);
+    const cleaned = stripStructuredContent(truncated);
 
     // Try ACR semantic extraction first
     const acrResult = await callAcrExtraction(cleaned);

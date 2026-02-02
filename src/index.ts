@@ -111,6 +111,12 @@ export {
   extractProposals,
   writeProposals,
   extractionHook,
+  // F-027
+  parseJsonlTranscript,
+  truncateForExtraction,
+  isValidProposalContent,
+  MAX_EXTRACTION_CHARS,
+  MIN_PROPOSAL_CONTENT_LENGTH,
 } from "./extraction";
 
 // =============================================================================

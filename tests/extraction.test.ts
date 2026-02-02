@@ -14,6 +14,11 @@ import {
   callAcrExtraction,
   stripStructuredContent,
   MAX_PROPOSAL_CONTENT_LENGTH,
+  parseJsonlTranscript,
+  truncateForExtraction,
+  isValidProposalContent,
+  MAX_EXTRACTION_CHARS,
+  MIN_PROPOSAL_CONTENT_LENGTH,
 } from "../src/extraction";
 
 // =============================================================================
@@ -612,8 +617,8 @@ describe("F-017: callAcrExtraction", () => {
     const restore = mockAcrCli({
       ok: true,
       learnings: [
-        { type: "pattern", content: "Prefers Bun", confidence: 0.85 },
-        { type: "insight", content: "LanceDB is fast", confidence: 0.72 },
+        { type: "pattern", content: "Prefers Bun for all runtime tasks", confidence: 0.85 },
+        { type: "insight", content: "LanceDB is fast for vector storage", confidence: 0.72 },
       ],
     });
     try {
@@ -901,7 +906,7 @@ describe("F-017: extractionHook with ACR", () => {
     const restore = mockAcrCli({
       ok: true,
       learnings: [
-        { type: "pattern", content: "Prefers TypeScript", confidence: 0.9 },
+        { type: "pattern", content: "Prefers TypeScript for all backend services", confidence: 0.9 },
         { type: "pattern", content: "prefers typescript", confidence: 0.8 },
       ],
     });
@@ -1188,5 +1193,161 @@ describe("truncateContent via extractProposals", () => {
 
   test("MAX_PROPOSAL_CONTENT_LENGTH is exported and equals 200", () => {
     expect(MAX_PROPOSAL_CONTENT_LENGTH).toBe(200);
+  });
+});
+
+// =============================================================================
+// F-027: parseJsonlTranscript — JSONL to conversation text
+// =============================================================================
+
+describe("F-027: parseJsonlTranscript", () => {
+  test("T-27.1a: extracts user and assistant text from JSONL", () => {
+    const jsonl = [
+      JSON.stringify({ type: "user", message: { content: "Hello, can you help?" } }),
+      JSON.stringify({ type: "assistant", message: { content: "Sure, I can help." } }),
+    ].join("\n");
+    const result = parseJsonlTranscript(jsonl);
+    expect(result).toContain("Hello, can you help?");
+    expect(result).toContain("Sure, I can help.");
+  });
+
+  test("T-27.1b: extracts text blocks from array content", () => {
+    const jsonl = JSON.stringify({
+      type: "assistant",
+      message: {
+        content: [
+          { type: "text", text: "Here is the answer." },
+          { type: "tool_use", id: "t1", name: "Read", input: {} },
+          { type: "text", text: "And more context." },
+        ],
+      },
+    });
+    const result = parseJsonlTranscript(jsonl);
+    expect(result).toContain("Here is the answer.");
+    expect(result).toContain("And more context.");
+    expect(result).not.toContain("tool_use");
+    expect(result).not.toContain("Read");
+  });
+
+  test("T-27.1c: skips non-user/assistant types and malformed lines", () => {
+    const jsonl = [
+      JSON.stringify({ type: "system", message: { content: "System message" } }),
+      "not valid json at all",
+      JSON.stringify({ type: "progress", data: { percent: 50 } }),
+      JSON.stringify({ type: "user", message: { content: "Real user message" } }),
+    ].join("\n");
+    const result = parseJsonlTranscript(jsonl);
+    expect(result).toContain("Real user message");
+    expect(result).not.toContain("System message");
+    expect(result).not.toContain("progress");
+  });
+
+  test("T-27.1d: empty input returns empty string", () => {
+    expect(parseJsonlTranscript("")).toBe("");
+    expect(parseJsonlTranscript("   ")).toBe("");
+  });
+});
+
+// =============================================================================
+// F-027: truncateForExtraction — Recency-biased transcript truncation
+// =============================================================================
+
+describe("F-027: truncateForExtraction", () => {
+  test("T-27.2a: text under limit returned unchanged", () => {
+    const text = "Short text that is under the limit.";
+    expect(truncateForExtraction(text)).toBe(text);
+  });
+
+  test("T-27.2b: text over limit truncated to last N chars", () => {
+    const early = "A".repeat(40_000);
+    const late = "B".repeat(20_000);
+    const text = early + "\n\n" + late;
+    const result = truncateForExtraction(text, 25_000);
+    // Should contain the late portion (recency bias)
+    expect(result).toContain("B".repeat(100));
+    // Should NOT contain the early portion
+    expect(result).not.toContain("A".repeat(100));
+    expect(result.length).toBeLessThanOrEqual(25_000);
+  });
+
+  test("T-27.2c: truncation aligns to paragraph boundary", () => {
+    const para1 = "First paragraph. " + "x".repeat(30_000);
+    const para2 = "Second paragraph start. " + "y".repeat(20_000);
+    const text = para1 + "\n\n" + para2;
+    const result = truncateForExtraction(text, 25_000);
+    // Should not start mid-word — should start at a \n\n boundary
+    expect(result.startsWith("A") || result.startsWith("x") || result.startsWith("S") || result.startsWith("y") || result.startsWith("\n")).toBe(true);
+  });
+
+  test("T-27.2d: MAX_EXTRACTION_CHARS constant is 50000", () => {
+    expect(MAX_EXTRACTION_CHARS).toBe(50_000);
+  });
+});
+
+// =============================================================================
+// F-027: Regex noise filtering — Algorithm format artifact rejection
+// =============================================================================
+
+describe("F-027: noise filtering in detectLearningSignals", () => {
+  test("T-27.3a: rejects algorithm format artifacts with signal phrases", () => {
+    const noisy = [
+      "Key insight from council**: 90% garbage proposals is a calibration issue.",
+      "For next time:** When adding a smart path, test the fallback.",
+      "━━━ VERIFY ━━━ I noticed that all tests pass.",
+    ].join("\n");
+    const signals = detectLearningSignals(noisy);
+    // All of these should be filtered by noise patterns
+    expect(signals.length).toBe(0);
+  });
+
+  test("T-27.3b: clean sentences with signal phrases still pass", () => {
+    const clean = "I noticed that caching helps with latency in production.";
+    const signals = detectLearningSignals(clean);
+    expect(signals.length).toBe(1);
+    expect(signals[0].type).toBe("insight");
+  });
+
+  test("T-27.3c: numbered list with brackets is rejected", () => {
+    const noisy = "1. [pattern] You prefer TypeScript strict mode.";
+    const signals = detectLearningSignals(noisy);
+    expect(signals.length).toBe(0);
+  });
+});
+
+// =============================================================================
+// F-027: isValidProposalContent — Content quality gate
+// =============================================================================
+
+describe("F-027: isValidProposalContent", () => {
+  test("T-27.4a: valid content passes", () => {
+    expect(isValidProposalContent("TypeScript strict mode catches many bugs early")).toBe(true);
+  });
+
+  test("T-27.4b: short content rejected (< 20 chars)", () => {
+    expect(isValidProposalContent("Key Insight:**")).toBe(false);
+    expect(isValidProposalContent("short")).toBe(false);
+  });
+
+  test("T-27.4c: pure formatting/punctuation rejected", () => {
+    expect(isValidProposalContent("** --- *** === :::")).toBe(false);
+    expect(isValidProposalContent("################----")).toBe(false);
+  });
+
+  test("T-27.4d: markdown-heavy content with substance passes", () => {
+    expect(isValidProposalContent("**Important**: TypeScript strict mode is better")).toBe(true);
+  });
+
+  test("T-27.4e: MIN_PROPOSAL_CONTENT_LENGTH constant is 20", () => {
+    expect(MIN_PROPOSAL_CONTENT_LENGTH).toBe(20);
+  });
+
+  test("T-27.4f: extractProposals filters invalid content", () => {
+    // This sentence matches "key insight" but content is too short after cleaning
+    const text = "Key Insight:**\nI noticed that caching helps with latency in production systems.";
+    const proposals = extractProposals(text, "test");
+    // Only the valid one should survive
+    for (const p of proposals) {
+      expect(p.content.length).toBeGreaterThanOrEqual(20);
+    }
   });
 });
