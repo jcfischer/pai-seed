@@ -291,6 +291,9 @@ describe("retrieveRelevantLearnings", () => {
     expect(result[1].learning.id).toBe("p2");
     // Score is 0 for recency fallback
     expect(result[0].score).toBe(0);
+    // Method is "recency" for fallback
+    expect(result[0].method).toBe("recency");
+    expect(result[1].method).toBe("recency");
   });
 
   it("respects maxResults", async () => {

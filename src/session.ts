@@ -137,7 +137,7 @@ export async function formatRelevantLearnings(
       return ""; // No relevant learnings found
     }
 
-    const isSemantic = ranked[0].score > 0;
+    const isSemantic = ranked[0].method === "semantic";
     const header = isSemantic
       ? `Relevant learnings (${ranked.length}/${totalLearnings}):`
       : `Recent learnings (${ranked.length}/${totalLearnings}):`;

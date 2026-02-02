@@ -12,6 +12,7 @@ export type RankedLearning = {
   learning: Learning;
   type: "pattern" | "insight" | "self_knowledge";
   score: number;
+  method: "semantic" | "recency";
 };
 
 type EmbeddingRow = {
@@ -396,7 +397,7 @@ export async function retrieveRelevantLearnings(
           for (const { learning, type } of all) {
             const score = idToResult.get(learning.id);
             if (score !== undefined) {
-              ranked.push({ learning, type, score });
+              ranked.push({ learning, type, score, method: "semantic" });
             }
           }
 
@@ -433,5 +434,5 @@ function recencyFallback(
       return dateB.localeCompare(dateA);
     })
     .slice(0, maxResults)
-    .map(({ learning, type }) => ({ learning, type, score: 0 }));
+    .map(({ learning, type }) => ({ learning, type, score: 0, method: "recency" as const }));
 }
