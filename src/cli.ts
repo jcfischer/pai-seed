@@ -28,6 +28,7 @@ import {
   updateExtractionStats,
 } from "./confirmation";
 import { resolveIdPrefix } from "./id-prefix";
+import { writeObservation } from "./observation";
 
 // =============================================================================
 // F-011: ANSI Helpers
@@ -337,6 +338,52 @@ async function cmdLearn(args: string[], seedPath?: string, verb = "added"): Prom
 
   console.log(ansi.green(`Added ${type}: "${content.trim()}"`));
   console.log(ansi.dim(`ID: ${learning.id}`));
+  return 0;
+}
+
+async function cmdObserve(args: string[]): Promise<number> {
+  if (args.length < 2) {
+    console.error(ansi.red("Usage: pai-seed observe <type> <content> [--session=<id>]"));
+    console.error("Types: pattern, insight, self_knowledge");
+    return 1;
+  }
+
+  const type = args[0];
+  if (!["pattern", "insight", "self_knowledge"].includes(type)) {
+    console.error(ansi.red(`Invalid type: "${type}". Must be pattern, insight, or self_knowledge`));
+    return 1;
+  }
+
+  // Extract --session flag if present
+  let sessionId = `session_${new Date().toISOString().slice(0, 10)}`;
+  const remaining: string[] = [];
+  for (const arg of args.slice(1)) {
+    if (arg.startsWith("--session=")) {
+      sessionId = arg.slice("--session=".length);
+    } else {
+      remaining.push(arg);
+    }
+  }
+
+  const content = remaining.join(" ");
+  if (!content.trim()) {
+    console.error(ansi.red("Content cannot be empty"));
+    return 1;
+  }
+
+  const result = await writeObservation({
+    type: type as "pattern" | "insight" | "self_knowledge",
+    content: content.trim(),
+    sessionId,
+  });
+
+  if (!result.ok) {
+    console.error(ansi.red(`Error: ${result.error}`));
+    return 1;
+  }
+
+  console.log(ansi.green(`Observed ${type}: "${content.trim()}"`));
+  console.log(ansi.dim(`ID: ${result.id} | Session: ${sessionId}`));
   return 0;
 }
 
@@ -1281,6 +1328,7 @@ ${ansi.bold("Commands:")}
   learn <type> <content>    Add a confirmed learning (alias: capture)
   status                    Quick health check (path, version, validity)
   diff                      Show git diff for seed.json
+  observe <type> <content>  Buffer an observation for later review
   forget <id>               Remove a learning by ID
   rel <subcommand>          Manage relationships
   stale                     List stale learnings (>90 days)
@@ -1289,8 +1337,9 @@ ${ansi.bold("Commands:")}
   repair                    Auto-repair from git history
   help                      Show this help
 
-${ansi.bold("Two channels for learning:")}
+${ansi.bold("Three channels for learning:")}
   ${ansi.dim("Deliberate:")}  pai-seed capture <type> <content>  (you decide what to save)
+  ${ansi.dim("Observe:")}     pai-seed observe <type> <content>  (buffer for later review)
   ${ansi.dim("Automatic:")}   Post-session extraction via ACR     (AI proposes, you review)
 
 ${ansi.bold("Proposals:")} list, accept <id>, reject <id>, review, accept-all, reject-all, clean
@@ -1330,6 +1379,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       return cmdLearn(args);
     case "capture":
       return cmdLearn(args, undefined, "captured");
+    case "observe":
+      return cmdObserve(args);
     case "forget":
       return cmdForget(args);
     case "rel":

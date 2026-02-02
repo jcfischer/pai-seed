@@ -348,3 +348,16 @@ export {
   searchSimilar,
   retrieveRelevantLearnings,
 } from "./embeddings";
+
+// =============================================================================
+// F-026: Mid-session observation
+// =============================================================================
+
+// Types
+export type { Observation, WriteObservationInput, WriteObservationResult } from "./observation";
+
+// Schemas
+export { observationSchema } from "./observation";
+
+// Functions
+export { writeObservation, readObservations, resolveObservationsDir } from "./observation";
